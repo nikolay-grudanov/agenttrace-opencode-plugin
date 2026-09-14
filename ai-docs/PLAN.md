@@ -13,13 +13,48 @@
 
 ---
 
-## Roadmap (Tier 1, next-up) — 2026-09-04
+## Roadmap (Tier 1, next-up) — 2026-09-15
 
-After F-005/F-010 v2/F-013/F-003 closed 2026-09-04. Detailed spec: `ai-docs/specs/F-011-loadconfig-cwd-bug.md`. Small bug fix, 1-2 hours.
+After F-016 closed (first public alpha 0.0.1). Detailed checklist: F-016 below. The public npm channel is now open; subsequent fixes ship as `0.0.x` patches (no `-kolya.<N>` suffix); pre-1.0 breaking changes ship as `0.1.0`, `0.2.0`, etc.
 
-- **T1-B. Bug: `loadConfig()` cwd vs project root mismatch** — `raindrop.json` placed in cwd or workdir is ignored because `loadConfig()` only checks `~/.config/opencode/raindrop.json` and `<input.directory>/.opencode/raindrop.json`. Affects multi-project isolation (the per-`eventName` partitioning that F-007 in workshop depends on).
+- **T1-C. Public release hygiene** — after each future `npm publish`, sync `~/.config/opencode/plugins/opencode-workshop-plugin.js` AND re-run smoke test against the published tarball (not just the local dist). Add a `Makefile`-equivalent script that does this in one command.
+- **T1-D. T1-B from before still open** — `loadConfig()` cwd vs project root mismatch (see ai-docs/specs/F-011-loadconfig-cwd-bug.md). 1-2 hours.
 
-Handoff for a future session that picks this up: `HANDOFF-NEXT-SESSION.md`.
+---
+
+## Active Features
+
+### F-016 — First public alpha release: `@grudanov-nikolay/opencode-workshop-plugin@0.0.1`
+
+**Context:** Pre-release line `0.1.0-kolya.<N>` was the in-house dev channel (15 internal versions, all closed features F-001 through F-006 baked in). Kolya authorized 2026-09-14 to cut the first **public** npm release. Goal: a clean, kolya-free, semver-valid version that anyone can `pnpm add`/`npm install` and drop into `~/.config/opencode/opencode.json` without modification.
+
+**Scope:**
+- Strip `kolya` markers from everything that ships to npm: package.json `version`, package.json `description`, embedded `package_default` block in `dist/index.{js,cjs}`, log prefix in `console.warn`/`console.error`/`appLog`, README, AGENTS.md.
+- Re-sync the embedded `package_default` block in both bundles with the actual `package.json` (currently diverged from upstream tarball — missing scope, wrong homepage/bugs URLs, leftover upstream devDeps).
+- Static copy `~/.config/opencode/plugins/opencode-workshop-plugin.js` must byte-match `dist/index.js` (OpenCode 1.17.x prefers the static copy over the npm cache).
+- README rewritten: drop "Kolya's fork" framing, list all 6 changes vs upstream as bullets, note pre-1.0 alpha status.
+- AGENTS.md publish workflow updated: `npm publish --access public` (default `latest` tag, not `kolya`); pre-publish checklist added.
+- PLAN.md: this entry documents the cut; the version line in the description of all closed features still says `0.1.0-kolya.<N>` historically — that's fine, those commits happened in that line.
+
+**Workshops repo (cross-repo):** NO change. `@raindrop/workshop` stays `private: true`, not published. The daemon is distributed as the `raindrop` CLI binary by upstream; this fork only ships a patched plugin to npm.
+
+**Todos:**
+- [x] Bump `package.json` version `0.1.0-kolya.15` → `0.0.1`, rewrite description
+- [x] Re-sync embedded `package_default` block in `dist/index.js` (lines 1279-1337) — match real package.json
+- [x] Re-sync embedded `package_default` block in `dist/index.cjs` (lines 1274-1332)
+- [x] Replace `kolya-oswp` → `oc-wsp` in all 9 occurrences per bundle (appLog helper + 8 console.warn/error sites)
+- [x] `bun --check dist/index.js && bun --check dist/index.cjs` — both pass (`node --check` SIGABRTs on Node v26.7.0 on this host; bun --check is the canonical syntax check)
+- [x] Verify zero `kolya`/`-kolya.X` strings remain in either bundle
+- [x] Sync static copy `~/.config/opencode/plugins/opencode-workshop-plugin.js` (sha256 match with dist/index.js)
+- [x] Rewrite README.md: drop Kolya-fork framing, list 6 fixes, alpha note
+- [x] Update AGENTS.md: publish command (`npm publish --access public`, default `latest`), pre-publish checklist
+- [x] `npm pack --dry-run` — payload contains only `dist/**`, `package.json`, `README.md`, `LICENSE` (52.5 kB total)
+- [ ] **Live smoke test** — Kolya to run after manual publish: `./scripts/install-local.sh --reinstall` + `opencode run` against a real MCP tool, verify spans land in Workshop DB and `plugin_version=0.0.1` in run metadata
+- [ ] **Manual `npm publish`** — Kolya action (not Miko's): `npm publish --access public` (will prompt for OTP)
+- [ ] Git commit (Miko) — `chore(F-016): first public alpha 0.0.1`
+- [ ] Git push (Kolya action) — Kolya explicit "push" required
+
+**Status:** all code-side work done; live smoke test + manual publish pending Kolya.
 
 ---
 

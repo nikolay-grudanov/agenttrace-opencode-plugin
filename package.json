@@ -1,7 +1,7 @@
 {
   "name": "@grudanov-nikolay/opencode-workshop-plugin",
-  "version": "0.1.0-kolya.15",
-  "description": "Kolya's fork of @raindrop-ai/opencode-plugin. v0.1.0-kolya.3 fixes MCP tool.execute.after crash (upstream issue #21149); v0.1.0-kolya.7 attaches subagent_name to OpenCode task tool spans; v0.1.0-kolya.8 rebrands log prefix and reported name; v0.1.0-kolya.9 (F-010) recovers subagent_name on live traces: JSON-string args tolerance + identity-prompt parsing ('You are \"name\"') from chat.message parts; v0.1.0-kolya.15 (F-006) wires Workshop sidepanel: registers `workshop` MCP server via the `config` hook and prepends a sidepanel system prompt via `experimental.chat.system.transform` when RAINDROP_SIDEPANEL_ACTIVE=1. Drop-in replacement.",
+  "version": "0.0.1",
+  "description": "Raindrop Workshop observability plugin for OpenCode. First public alpha (0.0.1). Drop-in replacement for @raindrop-ai/opencode-plugin with extra fixes: MCP tool.execute.after crash workaround (upstream issue anomalyco/opencode#21149), RAINDROP_LOCAL_WORKSHOP_URL non-local fallback, subagent_name recovery on 1.18 nested sub-agents (task span + child LLM span + Subagent root), result.error propagation into span status=ERROR, and Workshop sidepanel bootstrap (registers `workshop` MCP server and prepends sidepanel system prompt when RAINDROP_SIDEPANEL_ACTIVE=1).",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",

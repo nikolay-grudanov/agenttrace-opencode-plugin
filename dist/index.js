@@ -368,7 +368,7 @@ function readWorkshopEnv() {
     // back to auto-detection rather than silently mirroring to a non-local
     // host.
     if (!isLocalUrl(trimmed)) {
-      rateLimitedLog("workshop_env_non_local", () => console.warn(`[kolya-oswp] [warn] RAINDROP_WORKSHOP=${trimmed} is not a local URL; ignoring. Set local_workshop_url in raindrop.json if you really want a custom URL.`));
+      rateLimitedLog("workshop_env_non_local", () => console.warn(`[oc-wsp] [warn] RAINDROP_WORKSHOP=${trimmed} is not a local URL; ignoring. Set local_workshop_url in raindrop.json if you really want a custom URL.`));
       return void 0;
     }
     return { url: trimmed };
@@ -1268,7 +1268,7 @@ function resolveLocalWorkshopUrl(fileValue) {
     // rate-limited warning so the user notices the misconfiguration in
     // trace.log without log spam.
     if (!isLocalUrl(envValue)) {
-      rateLimitedLog("local_workshop_url_non_local", () => console.warn(`[kolya-oswp] [warn] RAINDROP_LOCAL_WORKSHOP_URL=${envValue} is not a local URL; falling back to raindrop.json (or auto-detect). If this is intentional, set local_workshop_url in raindrop.json too.`));
+      rateLimitedLog("local_workshop_url_non_local", () => console.warn(`[oc-wsp] [warn] RAINDROP_LOCAL_WORKSHOP_URL=${envValue} is not a local URL; falling back to raindrop.json (or auto-detect). If this is intentional, set local_workshop_url in raindrop.json too.`));
       return fileValue || DEFAULT_LOCAL_WORKSHOP_URL;
     }
     return envValue;
@@ -1279,16 +1279,21 @@ function resolveLocalWorkshopUrl(fileValue) {
 // package.json
 var package_default = {
   name: "@grudanov-nikolay/opencode-workshop-plugin",
-  version: "0.1.0-kolya.15",
-  description: "Raindrop observability plugin for OpenCode \u2014 automatic session/event/span tracing",
+  version: "0.0.1",
+  description: "Raindrop Workshop observability plugin for OpenCode. First public alpha (0.0.1). Drop-in replacement for @raindrop-ai/opencode-plugin with extra fixes: MCP tool.execute.after crash workaround (upstream issue anomalyco/opencode#21149), RAINDROP_LOCAL_WORKSHOP_URL non-local fallback, subagent_name recovery on 1.18 nested sub-agents (task span + child LLM span + Subagent root), result.error propagation into span status=ERROR, and Workshop sidepanel bootstrap (registers `workshop` MCP server and prepends sidepanel system prompt when RAINDROP_SIDEPANEL_ACTIVE=1).",
   type: "module",
   main: "dist/index.js",
   module: "dist/index.js",
   types: "dist/index.d.ts",
   license: "MIT",
-  homepage: "https://www.raindrop.ai/docs/integrations/opencode/",
+  homepage: "https://github.com/nikolay-grudanov/opencode-workshop-plugin",
   bugs: {
-    url: "https://www.raindrop.ai/docs/support/",
+    url: "https://github.com/nikolay-grudanov/opencode-workshop-plugin/issues",
+  },
+  author: "Nikolai Grudanov <nikolay-grudanov@users.noreply.github.com>",
+  repository: {
+    type: "git",
+    url: "git+https://github.com/nikolay-grudanov/opencode-workshop-plugin.git",
   },
   exports: {
     ".": {
@@ -1299,12 +1304,6 @@ var package_default = {
   },
   sideEffects: false,
   files: ["dist/**"],
-  scripts: {
-    build: "tsup",
-    dev: "tsup --watch",
-    clean: "rm -rf dist",
-    test: "cd tests && pnpm test",
-  },
   peerDependencies: {
     "@opencode-ai/plugin": ">=1.3.0",
     "@opencode-ai/sdk": ">=1.3.0",
@@ -1313,23 +1312,6 @@ var package_default = {
     "@opencode-ai/sdk": {
       optional: true,
     },
-  },
-  devDependencies: {
-    "@raindrop-ai/core": "workspace:*",
-    "@opencode-ai/plugin": "^1.3.3",
-    "@opencode-ai/sdk": "^1.3.3",
-    "@types/node": "^20.11.17",
-    tsup: "^8.4.0",
-    typescript: "^5.3.3",
-  },
-  tsup: {
-    entry: ["src/index.ts"],
-    format: ["cjs", "esm"],
-    dts: {
-      resolve: true,
-    },
-    clean: true,
-    noExternal: ["@raindrop-ai/core"],
   },
   publishConfig: {
     access: "public",
@@ -1624,7 +1606,7 @@ function getHostname() {
 function createHooks(config, worktree, directory, eventShipper, traceShipper, gitContext, resolvedLocalUrl, sidepanelMode) {
   function log(msg, data) {
     if (!config.debug) return;
-    const prefix = `[kolya-oswp] [info] ${msg}`;
+    const prefix = `[oc-wsp] [info] ${msg}`;
     if (data !== void 0) {
       console.log(prefix, data);
       return;
@@ -1959,7 +1941,7 @@ type: ${errorName != null ? errorName : "UnknownError"}`;
           sessions.delete(String(errorSessionID));
         }
       } catch (err) {
-        rateLimitedErrorLog("event", `[kolya-oswp] [error] Error in event hook: ${err instanceof Error ? err.message : String(err)}`);
+        rateLimitedErrorLog("event", `[oc-wsp] [error] Error in event hook: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
     // ------------------------------------------------------------------
@@ -2178,7 +2160,7 @@ type: ${errorName != null ? errorName : "UnknownError"}`;
           });
         }
       } catch (err) {
-        rateLimitedErrorLog("tool.execute.before", `[kolya-oswp] [error] Error in tool.execute.before hook: ${err instanceof Error ? err.message : String(err)}`);
+        rateLimitedErrorLog("tool.execute.before", `[oc-wsp] [error] Error in tool.execute.before hook: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
     // ------------------------------------------------------------------
@@ -2263,7 +2245,7 @@ type: ${errorName != null ? errorName : "UnknownError"}`;
           markTaskCallFinished(sessionID, callID);
         }
       } catch (err) {
-        rateLimitedErrorLog("tool.execute.after", `[kolya-oswp] [error] Error in tool.execute.after hook: ${err instanceof Error ? err.message : String(err)}`);
+        rateLimitedErrorLog("tool.execute.after", `[oc-wsp] [error] Error in tool.execute.after hook: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
     // ------------------------------------------------------------------
@@ -2281,7 +2263,7 @@ type: ${errorName != null ? errorName : "UnknownError"}`;
       } catch (err) {
         rateLimitedErrorLog(
           "experimental.session.compacting",
-          `[kolya-oswp] [error] Error in experimental.session.compacting hook: ${err instanceof Error ? err.message : String(err)}`,
+          `[oc-wsp] [error] Error in experimental.session.compacting hook: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     },
@@ -2320,7 +2302,7 @@ type: ${errorName != null ? errorName : "UnknownError"}`;
       } catch (err) {
         rateLimitedErrorLog(
           "experimental.chat.system.transform",
-          `[kolya-oswp] [error] Error in experimental.chat.system.transform hook: ${err instanceof Error ? err.message : String(err)}`,
+          `[oc-wsp] [error] Error in experimental.chat.system.transform hook: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     },
@@ -2381,7 +2363,7 @@ async function plugin(input) {
     };
   }
   function appLog(level, message) {
-    console.log(`[kolya-oswp] [${level}] ${message}`);
+    console.log(`[oc-wsp] [${level}] ${message}`);
   }
   appLog("info", `Loading ${PLUGIN_NAME} v${PLUGIN_VERSION}`);
   const resolvedLocalUrl = resolveLocalDebuggerBaseUrl(config.localWorkshopUrl);
