@@ -25,41 +25,6 @@ Handoff for a future session that picks this up: `HANDOFF-NEXT-SESSION.md`.
 
 ## Active Features
 
-### F-006 — Workshop sidepanel bootstrap (register `workshop` MCP server + inject sidepanel system prompt)
-
-**Context:** The Workshop sidepanel chat opens `opencode run` in the user's workspace. Today the agent has zero context for traces — no MCP tools for `get_current_run` / `query_traces` / `get_span_payload`, no system prompt explaining the sidepanel role. Upstream claude/codex bridges used `--mcp-config <json>` and `--append-system-prompt`; `opencode run` has neither. We need the same effect via plugin hooks.
-
-**Approach:** Two hook insertions in both bundles (ESM + CJS), gated by `RAINDROP_SIDEPANEL_ACTIVE=1` (set by Workshop chat bridge):
-
-1. **`config` hook** (`@opencode-ai/plugin` `Hooks.config`): when the env gate is on, mutate `input.mcp.workshop = { type: "local", command, args, enabled, environment: { RAINDROP_WORKSHOP_URL, RAINDROP_WORKSHOP_AGENT_PROVIDER="opencode", RAINDROP_WORKSHOP_ANNOTATION_SOURCE="opencode" } }`. This is functionally identical to claude's `--mcp-config` flag — opencode spins up the stdio `workshop mcp` server for this session, exposing `workshop__get_current_run`, `workshop__query_traces`, etc.
-2. **`experimental.chat.system.transform` hook**: prepend a short sidepanel role + MCP-tool block to `output.system`. The block includes the focused `run_id` so the agent knows which trace the user is currently inspecting.
-
-Both hooks are best-effort (errors silently rate-limited) so the existing tracing path is never broken.
-
-**Companion Workshop change:** `src/opencode-cli-chat.ts` must export `RAINDROP_SIDEPANEL_ACTIVE=1` and `RAINDROP_SIDEPANEL_RUN_ID=<id>` in the child env (and `RAINDROP_WORKSHOP_AGENT_PROVIDER` / `RAINDROP_WORKSHOP_ANNOTATION_SOURCE` already there). That part lives in the Workshop fork as `F-006 chat-side`.
-
-**Verified (both bundles):** `node --check` passes; helper functions `resolveLocalDebuggerBaseUrl`, `collectGitContext`, `appLog`, `rateLimitedErrorLog` reused; no new deps.
-
-**Verified live (2026-09-08):** with Workshop bridge exporting `OPENCODE_CONFIG_DIR=/home/gna/.cache/workshop-sidepanel/<pid>-<ts>/`, opencode 1.18 picks up the generated `opencode.json` and registers the `workshop` stdio MCP server. Agent invokes `workshop__get_current_run` first and answers with the focused run_id. End-to-end confirmed via `curl` and via the MessagePane UI.
-
-Key fixes discovered during live verification:
-- `OPENCODE_CONFIG_DIR` is read at config-load time. Plugin-side `process.env` mutations after the child execve do not propagate, so the bridge must write the dir and pass it via spawn env. Workshop bridge now does this in `writeSidepanelConfigDir` (companion to plugin-side tmpdir).
-- `McpLocalConfig.command` is `[exe, ...args]` as a single array — `args` is not a separate field.
-- Workshop MCP stdio server expects `RAINDROP_WORKSHOP_URL` without `/v1/` (stripped in both bridge and plugin).
-- Plugin's `eventShipper`/`traceShipper` creation must come AFTER `worktree` + `gitContext` declaration (TDZ fix).
-
-**Todos:**
-- [x] Plan F-006 (this entry)
-- [x] Bump version to `0.1.0-kolya.15` (package.json + both bundles)
-- [x] Sidepanel tmpdir with `opencode.json` in both bundles (gate by `RAINDROP_SIDEPANEL_ACTIVE`)
-- [x] Export `OPENCODE_CONFIG_DIR` from plugin `process.env`
-- [x] Extend `system.transform` to prepend sidepanel prompt when sidepanel mode
-- [x] Wire `sidepanelMode = hasLocalDestination && RAINDROP_SIDEPANEL_ACTIVE === "1"` in `plugin()`
-- [x] Plumb `resolvedLocalUrl` + `sidepanelMode` into `createHooks`
-- [x] `node --check` both bundles
-- [x] Live UI smoke: sidepanel chat invokes `workshop__get_current_run` end-to-end
-- [x] Commit + push F-006 (commit `68bd80c`)
-
 ### F-005 — `RAINDROP_LOCAL_WORKSHOP_URL` env-var precedence fix (fall back to file if env value is non-local)
 
 **Context:** Real bug, already bitten us 2026-06-30 (lost spans for 2 hours). `resolveLocalWorkshopUrl()` in `dist/index.{js,cjs}` unconditionally returns `process.env["RAINDROP_LOCAL_WORKSHOP_URL"]` when set, regardless of whether the value points at a reachable local daemon. Stale `~/.bashrc` exports or copy-pasted values override a correct `raindrop.json` `local_workshop_url` silently — the plugin happily POSTs spans to a non-existent host and Workshop shows zero new runs. The user discovers the issue only when they wonder "why aren't my traces showing up?".
@@ -93,7 +58,10 @@ Key fixes discovered during live verification:
 - [x] Static unit check: 16/16 cases pass on both bundles (via `/tmp/f005-unit.mjs` extracting helpers from real bundle + isolated VM test)
 - [x] Bump version to `0.1.0-kolya.12`
 - [x] Live test: `RAINDROP_LOCAL_WORKSHOP_URL=https://stale.example.com/v1/` + no `raindrop.json` → plugin falls back to `DEFAULT_LOCAL_WORKSHOP_URL=http://localhost:5899/v1/`; spans land in Workshop; warning logged to trace.log
-- [ ] Commit F-005 (pending below)
+- [x] Commit F-005 (`c4b81b0`, version bumped to `0.1.0-kolya.12`)
+- [x] Push F-005 to GitHub (`a7d4c24` doc sync commit on main)
+
+**Closed 2026-09-04.**
 
 ### F-013 — Propagate `result.error` into `endSpan`/`createSpan` so spans get `status=ERROR`
 
