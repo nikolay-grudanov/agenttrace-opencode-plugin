@@ -13,12 +13,17 @@
 
 ---
 
-## Roadmap (Tier 1, next-up) — 2026-09-15
+## Roadmap (Tier 1, next-up) — 2026-09-17
 
-After F-016 closed (first public alpha 0.0.1). Detailed checklist: F-016 below. The public npm channel is now open; subsequent fixes ship as `0.0.x` patches (no `-kolya.<N>` suffix); pre-1.0 breaking changes ship as `0.1.0`, `0.2.0`, etc.
+Public release is live (`v0.0.1` on npm under `latest`). Next-up items, in priority order:
 
-- **T1-C. Public release hygiene** — after each future `npm publish`, sync `~/.config/opencode/plugins/opencode-workshop-plugin.js` AND re-run smoke test against the published tarball (not just the local dist). Add a `Makefile`-equivalent script that does this in one command.
-- **T1-D. T1-B from before still open** — `loadConfig()` cwd vs project root mismatch (see ai-docs/specs/F-011-loadconfig-cwd-bug.md). 1-2 hours.
+- **T1-A. Sync upstream `raindrop-ai/workshop` v0.1.21** — we're 8 commits behind upstream; their changes include a `display_name` column on runs (DB migration conflict — our `0002_fts5_spans` already occupies idx 2, theirs is `0002_flowery_shinobi_shaw`). Resolution plan: rename our FTS5 migration to `0003` with a migration-safety check (don't re-run if `spans_fts` already exists), then merge upstream. ~2-3 hours.
+- **T1-B. Git LFS for binaries** — current `binaries/raindrop-linux-x64` (79 MB) and `raindrop-windows-x64.exe` (99 MB) trigger GitHub "large file" warning on every push. Migrating to LFS silences the warning and speeds up `git clone`. ~1 hour.
+- **T1-C. macOS / linux-arm64 binaries** — only linux-x64 + win32-x64 ship today. Either expand `bin/raindrop.js` to support more platforms (requires cross-compile in CI) or document source-build as the only path. Open question: do we even own the platform set, or keep it narrow on purpose?
+- **T1-D. F-011 `loadConfig` cwd vs project root bug** — open bug in plugin, multi-project isolation broken. ~1-2 hours.
+- **T1-E. Public-release hygiene automation** — `Makefile`-equivalent that runs pre-publish checklist + smoke test against the published tarball (not local dist) on every future `npm publish`.
+
+For detailed breakdown of every closed feature see `## Closed Features` below.
 
 ---
 
