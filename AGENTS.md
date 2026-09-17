@@ -9,9 +9,9 @@ This is **Kolya's maintained fork** of the npm-only `@raindrop-ai/opencode-plugi
 
 The upstream plugin source is **not on GitHub** — it ships only as an npm tarball (`@raindrop-ai/opencode-plugin@0.0.18`, 41 KB, MIT). We extracted the tarball, initialized a public git repo, and now maintain our own branch.
 
-**Public package name:** `@grudanov-nikolay/opencode-workshop-plugin` (drop-in replacement for `@raindrop-ai/opencode-plugin`).
+**Public package name:** `@grudanov-nikolay/agenttrace-opencode-plugin` (drop-in replacement for `@raindrop-ai/opencode-plugin`, renamed from `@grudanov-nikolay/opencode-workshop-plugin@0.0.1` on 2026-09-17, F-024).
 
-**Public repo:** https://github.com/nikolay-grudanov/opencode-workshop-plugin
+**Public repo:** https://github.com/nikolay-grudanov/agenttrace-opencode-plugin
 
 **Why the fork exists:**
 
@@ -71,9 +71,9 @@ pnpm test            # tests live in tests/ (currently empty)
 ### Publishing
 
 ```bash
-# First public release — version 0.0.1 published as the default `latest` tag.
+# First public release under the new name — version 0.1.0 published as the default `latest` tag.
 # Subsequent pre-1.0 work should use `--tag alpha` until 1.0.0 ships.
-cd /path/to/opencode-workshop-plugin
+cd /path/to/agenttrace-opencode-plugin
 # Verify the tarball that will be uploaded:
 npm pack --dry-run
 # Sanity-check what npm would publish:

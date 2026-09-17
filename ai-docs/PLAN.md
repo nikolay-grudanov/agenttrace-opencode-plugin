@@ -29,6 +29,42 @@ For detailed breakdown of every closed feature see `## Closed Features` below.
 
 ## Active Features
 
+### F-024 — Rename stack: `opencode-workshop-plugin` → `agenttrace-opencode-plugin`
+
+**Context:** As of 2026-09-17 Kolya decided to rename the entire stack away from the overloaded `workshop` name. This repo becomes `@grudanov-nikolay/agenttrace-opencode-plugin` (version `0.0.1` → `0.1.0`). Companion repos:
+- `opencode-workshop` (daemon) → `agenttrace`
+- `openworkshop-qwen-bridge` → `agenttrace-qwen-bridge`
+
+**Files to edit:**
+- `package.json` — `name`, `version`, `homepage`, `bugs.url`, `repository.url`, `description`
+- `dist/index.js` — `package_default` literal block (name, version, description, homepage, bugs.url, repository.url) — hand-patch
+- `dist/index.cjs` — same as `dist/index.js` — lockstep
+- `~/.config/opencode/plugins/opencode-workshop-plugin.js` — copy of new `dist/index.js` (file name kept for OpenCode loader continuity; only the contents change)
+- `README.md` — install commands, version table, repo URLs
+- `AGENTS.md` — package name + public repo + Publishing command path
+- `scripts/install-local.sh` — comments only; the script reads name from `package.json` dynamically
+
+**Out of scope:**
+- HANDOFF files (`ai-docs/HANDOFF*`, `ai-docs/specs/F-011`) — historical; left intact
+- Closed Features description (F-016 mentions the old `0.0.1` name on purpose — record of what shipped)
+- Static copy **file name** `~/.config/opencode/plugins/opencode-workshop-plugin.js` — kept for OpenCode loader continuity; only the file *contents* are renamed
+
+**Deferred to separate Kolya-authorized steps:**
+- `npm publish @grudanov-nikolay/agenttrace-opencode-plugin@0.1.0`
+- `npm deprecate @grudanov-nikolay/opencode-workshop-plugin@0.0.1`
+- `gh repo edit --rename` on `nikolay-grudanov/opencode-workshop-plugin` → `agenttrace-opencode-plugin`
+
+**Todos:**
+- [x] `package.json` rename + version bump + repo URLs
+- [x] `dist/index.js` patch (`package_default` literal block)
+- [x] `dist/index.cjs` lockstep patch
+- [x] Static copy `~/.config/opencode/plugins/opencode-workshop-plugin.js` sync (sha256 match with new `dist/index.js`)
+- [x] `README.md` (header, intro, table, install command, install command in plugin config)
+- [x] `AGENTS.md` (package name, public repo, publishing command path)
+- [x] `scripts/install-local.sh` comments
+- [ ] Push to `origin/main` (Kolya action)
+- [ ] Live smoke test after Kolya publishes `0.1.0` and points OpenCode at the new package name
+
 ### F-005 — `RAINDROP_LOCAL_WORKSHOP_URL` env-var precedence fix (fall back to file if env value is non-local)
 
 **Context:** Real bug, already bitten us 2026-06-30 (lost spans for 2 hours). `resolveLocalWorkshopUrl()` in `dist/index.{js,cjs}` unconditionally returns `process.env["RAINDROP_LOCAL_WORKSHOP_URL"]` when set, regardless of whether the value points at a reachable local daemon. Stale `~/.bashrc` exports or copy-pasted values override a correct `raindrop.json` `local_workshop_url` silently — the plugin happily POSTs spans to a non-existent host and Workshop shows zero new runs. The user discovers the issue only when they wonder "why aren't my traces showing up?".

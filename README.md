@@ -1,26 +1,30 @@
-# `@grudanov-nikolay/opencode-workshop-plugin`
+# `@grudanov-nikolay/agenttrace-opencode-plugin`
 
-Raindrop Workshop observability plugin for OpenCode. Streams OpenCode sessions,
-events, and OTLP-style spans into the local Workshop daemon on
-`http://localhost:5899` (and to Raindrop Cloud if a `RAINDROP_WRITE_KEY` is set).
+agenttrace observability plugin for OpenCode. Streams OpenCode sessions,
+events, and OTLP-style spans into the local agenttrace (formerly Workshop)
+daemon on `http://localhost:5899` (and to Raindrop Cloud if a
+`RAINDROP_WRITE_KEY` is set).
 
-This is the first public alpha release (`0.0.1`) of the fork that powers the
-[Kolya / MIFI](https://github.com/nikolay-grudanov) stack — `opencode-workshop`
-+ this plugin. It is a **drop-in replacement** for the closed-source
-`@raindrop-ai/opencode-plugin` and ships additional fixes on top.
+This is the first public release under the new name (`0.1.0`, renamed from
+`@grudanov-nikolay/opencode-workshop-plugin@0.0.1` on 2026-09-17, F-024). It is
+a **drop-in replacement** for the closed-source `@raindrop-ai/opencode-plugin`
+and ships additional fixes on top. The daemon name moved from
+`opencode-workshop` to `agenttrace`; companion packages now are
+`@grudanov-nikolay/agenttrace` (daemon) and
+`@grudanov-nikolay/agenttrace-opencode-plugin` (this plugin).
 
-|| |
-||---|
-|| **Upstream** | `@raindrop-ai/opencode-plugin@0.0.18` (npm-only, no public git) |
-|| **This fork** | `@grudanov-nikolay/opencode-workshop-plugin@0.0.1` |
-|| **Repo** | https://github.com/nikolay-grudanov/opencode-workshop-plugin |
-|| **License** | MIT (see [LICENSE](./LICENSE) — dual copyright Raindrop AI + Nikolai Grudanov) |
-|| **Verified** | A/B smoke test against upstream on `fff_find_files` MCP tool — 0 errors, 2 tool calls landed in Workshop with status=OK |
+| | |
+|---|---|
+| **Upstream** | `@raindrop-ai/opencode-plugin@0.0.18` (npm-only, no public git) |
+| **This fork** | `@grudanov-nikolay/agenttrace-opencode-plugin@0.1.0` |
+| **Repo** | https://github.com/nikolay-grudanov/agenttrace-opencode-plugin |
+| **License** | MIT (see [LICENSE](./LICENSE) — dual copyright Raindrop AI + Nikolai Grudanov) |
+| **Verified** | A/B smoke test against upstream on `fff_find_files` MCP tool — 0 errors, 2 tool calls landed in agenttrace with status=OK |
 
 ## Install
 
 ```bash
-pnpm add @grudanov-nikolay/opencode-workshop-plugin @opencode-ai/plugin
+pnpm add @grudanov-nikolay/agenttrace-opencode-plugin @opencode-ai/plugin
 ```
 
 If your integration also uses the OpenCode SDK directly, install `@opencode-ai/sdk` as well.
@@ -29,11 +33,11 @@ Then add to your project or `~/.config/opencode/opencode.json`:
 
 ```json
 {
-  "plugin": ["@grudanov-nikolay/opencode-workshop-plugin@0.0.1"]
+  "plugin": ["@grudanov-nikolay/agenttrace-opencode-plugin@0.1.0"]
 }
 ```
 
-For per-project `eventName` (so Workshop UI splits runs by project), set:
+For per-project `eventName` (so agenttrace UI splits runs by project), set:
 
 ```json
 {
@@ -49,8 +53,8 @@ or via env: `RAINDROP_PROJECT_ID=support-prod`.
 If you're working on the plugin itself, OpenCode 1.17.x loads plugins only from its own cache — `npm link` and `package.json` `file:` references are ignored. Use the install helper:
 
 ```bash
-git clone https://github.com/nikolay-grudanov/opencode-workshop-plugin.git
-cd opencode-workshop-plugin
+git clone https://github.com/nikolay-grudanov/agenttrace-opencode-plugin.git
+cd agenttrace-opencode-plugin
 ./scripts/install-local.sh
 ```
 
@@ -58,7 +62,7 @@ Then add to `~/.config/opencode/opencode.json`:
 
 ```json
 {
-  "plugin": ["@grudanov-nikolay/opencode-workshop-plugin@0.0.1"]
+  "plugin": ["@grudanov-nikolay/agenttrace-opencode-plugin@0.1.0"]
 }
 ```
 

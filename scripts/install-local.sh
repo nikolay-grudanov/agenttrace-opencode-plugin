@@ -11,7 +11,7 @@
 #   ./scripts/install-local.sh --reinstall     # uninstall + install
 #
 # After install, add to your ~/.config/opencode/opencode.json (or project opencode.json):
-#   "plugin": ["@grudanov-nikolay/opencode-workshop-plugin@<version>"]
+#   "plugin": ["@grudanov-nikolay/agenttrace-opencode-plugin@<version>"]
 #
 # The script is idempotent: re-running just refreshes the symlink.
 
@@ -48,13 +48,13 @@ fi
 PKG_NAME=$(node -e "process.stdout.write(require('$PKG_JSON').name)")
 PKG_VERSION=$(node -e "process.stdout.write(require('$PKG_JSON').version)")
 
-# Extract scope (e.g. "@grudanov-nikolay/opencode-workshop-plugin" -> "@grudanov-nikolay")
+# Extract scope (e.g. "@grudanov-nikolay/agenttrace-opencode-plugin" -> "@grudanov-nikolay")
 if [[ "$PKG_NAME" != @*/* ]]; then
   echo "ERROR: package name must be scoped (got: $PKG_NAME). This script assumes OpenCode cache layout for scoped packages." >&2
   exit 1
 fi
 SCOPE="${PKG_NAME%%/*}"  # "@grudanov-nikolay"
-NAME="${PKG_NAME#*/}"    # "opencode-workshop-plugin"
+NAME="${PKG_NAME#*/}"    # "agenttrace-opencode-plugin"
 
 CACHE_ROOT="${HOME}/.cache/opencode/packages"
 CACHE_PKG_DIR="$CACHE_ROOT/$SCOPE/$NAME@$PKG_VERSION"
