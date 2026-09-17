@@ -1279,7 +1279,7 @@ function resolveLocalWorkshopUrl(fileValue) {
 // package.json
 var package_default = {
   name: "@grudanov-nikolay/agenttrace-opencode-plugin",
-  version: "0.1.0",
+  version: "0.0.2",
   description: "agenttrace observability plugin for OpenCode. Drop-in replacement for @raindrop-ai/opencode-plugin. Renamed from @grudanov-nikolay/opencode-workshop-plugin@0.0.1 \u2192 @grudanov-nikolay/agenttrace-opencode-plugin@0.1.0 on 2026-09-17 (F-024). Carries the same 5 fixes: MCP tool.execute.after crash workaround (upstream issue anomalyco/opencode#21149), RAINDROP_LOCAL_WORKSHOP_URL non-local fallback, subagent_name recovery on 1.18 nested sub-agents (task span + child LLM span + Subagent root), result.error propagation into span status=ERROR, and Workshop sidepanel bootstrap (registers `workshop` MCP server and prepends sidepanel system prompt when RAINDROP_SIDEPANEL_ACTIVE=1).",
   type: "module",
   main: "dist/index.js",
