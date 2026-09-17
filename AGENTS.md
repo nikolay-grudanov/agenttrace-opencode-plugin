@@ -51,7 +51,7 @@ Then add the plugin to your OpenCode config (see next section).
 - **Always update PLAN.md in the same commit as the code change.** If you finish a todo, mark it `[x]` AND commit. Don't let the plan drift from the code.
 - New features go at the **top** of the file (newest first), with the next available F-number.
 - After a release: move the Feature into `## Closed Features` with `Closed YYYY-MM-DD`, **and** update the `## Roadmap (Tier 1, next-up)` section (drop shipped items, add newly-discovered ones).
-- See `~/workspase/projects/opencode-workshop-stack/AGENTS.md#6` for the umbrella-level rule on durable-state hygiene after every release (PLAN.md + STATUS.md + PUBLISH-INSTRUCTION + Hindsight).
+- See `~/workspase/projects/agenttrace-stack/AGENTS.md#6` for the umbrella-level rule on durable-state hygiene after every release (PLAN.md + STATUS.md + PUBLISH-INSTRUCTION + Hindsight).
 
 ### Do not touch
 

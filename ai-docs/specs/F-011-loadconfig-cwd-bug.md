@@ -2,7 +2,7 @@
 
 > **Status:** Planning spec. Roadmap Tier 1 (next-up). Not yet implemented.
 > **Author:** Miko (Hermes Agent) for Kolya Gruanov, 2026-09-04.
-> **Repo:** `~/workspase/projects/opencode-workshop-plugin` (companion plugin).
+> **Repo:** `~/workspase/projects/agenttrace-opencode-plugin` (companion plugin).
 > **Estimated effort:** 1-2 hours.
 > **Commits target:** 1-2 atomic commits.
 

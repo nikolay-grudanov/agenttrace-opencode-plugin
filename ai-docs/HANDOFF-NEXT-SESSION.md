@@ -16,10 +16,10 @@
 
 | Path | State |
 |---|---|
-| `~/workspase/projects/opencode-workshop-plugin/dist/{index.js,index.cjs}` | At v0.1.0-kolya.12 (F-005 shipped) |
+| `~/workspase/projects/agenttrace-opencode-plugin/dist/{index.js,index.cjs}` | At v0.1.0-kolya.12 (F-005 shipped) |
 | `~/.config/opencode/plugins/opencode-workshop-plugin.js` | Static copy at kolya.12 |
-| `~/workspase/projects/opencode-workshop-plugin/ai-docs/PLAN.md` | Has Tier 1 roadmap section |
-| `~/workspase/projects/opencode-workshop-plugin/ai-docs/specs/F-011-loadconfig-cwd-bug.md` | Ready to implement |
+| `~/workspase/projects/agenttrace-opencode-plugin/ai-docs/PLAN.md` | Has Tier 1 roadmap section |
+| `~/workspase/projects/agenttrace-opencode-plugin/ai-docs/specs/F-011-loadconfig-cwd-bug.md` | Ready to implement |
 | Workshop daemon | Running on pid 2202413 via `bun --watch src/index.ts` — auto-reloads on `src/` changes |
 | `~/.raindrop/raindrop_workshop.db` | ~520 spans, all event_name="opencode_session" (this is the bug) |
 
