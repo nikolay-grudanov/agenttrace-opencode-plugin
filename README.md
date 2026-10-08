@@ -5,7 +5,7 @@ events, and OTLP-style spans into the local agenttrace (formerly Workshop)
 daemon on `http://localhost:5899` (and to Raindrop Cloud if a
 `RAINDROP_WRITE_KEY` is set).
 
-This is the first public release under the new name (`0.1.0`, renamed from
+This is the first public release under the new name (`0.0.2`, renamed from
 `@grudanov-nikolay/opencode-workshop-plugin@0.0.1` on 2026-09-17, F-024). It is
 a **drop-in replacement** for the closed-source `@raindrop-ai/opencode-plugin`
 and ships additional fixes on top. The daemon name moved from
@@ -16,7 +16,7 @@ and ships additional fixes on top. The daemon name moved from
 | | |
 |---|---|
 | **Upstream** | `@raindrop-ai/opencode-plugin@0.0.18` (npm-only, no public git) |
-| **This fork** | `@grudanov-nikolay/agenttrace-opencode-plugin@0.1.0` |
+| **This fork** | `@grudanov-nikolay/agenttrace-opencode-plugin@0.0.2` |
 | **Repo** | https://github.com/nikolay-grudanov/agenttrace-opencode-plugin |
 | **License** | MIT (see [LICENSE](./LICENSE) — dual copyright Raindrop AI + Nikolai Grudanov) |
 | **Verified** | A/B smoke test against upstream on `fff_find_files` MCP tool — 0 errors, 2 tool calls landed in agenttrace with status=OK |
@@ -33,7 +33,7 @@ Then add to your project or `~/.config/opencode/opencode.json`:
 
 ```json
 {
-  "plugin": ["@grudanov-nikolay/agenttrace-opencode-plugin@0.1.0"]
+  "plugin": ["@grudanov-nikolay/agenttrace-opencode-plugin@0.0.2"]
 }
 ```
 
@@ -62,7 +62,7 @@ Then add to `~/.config/opencode/opencode.json`:
 
 ```json
 {
-  "plugin": ["@grudanov-nikolay/agenttrace-opencode-plugin@0.1.0"]
+  "plugin": ["@grudanov-nikolay/agenttrace-opencode-plugin@0.0.2"]
 }
 ```
 

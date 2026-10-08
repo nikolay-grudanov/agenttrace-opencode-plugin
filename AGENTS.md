@@ -71,7 +71,7 @@ pnpm test            # tests live in tests/ (currently empty)
 ### Publishing
 
 ```bash
-# First public release under the new name — version 0.1.0 published as the default `latest` tag.
+# First public release under the new name — version 0.0.2 published as the default `latest` tag (2026-09-17).
 # Subsequent pre-1.0 work should use `--tag alpha` until 1.0.0 ships.
 cd /path/to/agenttrace-opencode-plugin
 # Verify the tarball that will be uploaded:

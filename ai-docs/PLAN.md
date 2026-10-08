@@ -1,4 +1,4 @@
-# PLAN.md — OpenCode Workshop Plugin (Kolya's fork)
+# PLAN.md — agenttrace-opencode-plugin (Kolya's fork, formerly `opencode-workshop-plugin`)
 
 > **Single source of truth for all development work in this repo.**
 > Features at the top (newest first), each with checkboxes. Update in the same commit as the code change.
@@ -13,15 +13,16 @@
 
 ---
 
-## Roadmap (Tier 1, next-up) — 2026-09-17
+## Roadmap (Tier 1, next-up) — 2026-10-08
 
-Public release is live (`v0.0.1` on npm under `latest`). Next-up items, in priority order:
+Current version: `0.0.2` (published under the new `agenttrace` name). Next-up items, in priority order:
 
-- **T1-A. Sync upstream `raindrop-ai/workshop` v0.1.21** — we're 8 commits behind upstream; their changes include a `display_name` column on runs (DB migration conflict — our `0002_fts5_spans` already occupies idx 2, theirs is `0002_flowery_shinobi_shaw`). Resolution plan: rename our FTS5 migration to `0003` with a migration-safety check (don't re-run if `spans_fts` already exists), then merge upstream. ~2-3 hours.
-- **T1-B. Git LFS for binaries** — current `binaries/raindrop-linux-x64` (79 MB) and `raindrop-windows-x64.exe` (99 MB) trigger GitHub "large file" warning on every push. Migrating to LFS silences the warning and speeds up `git clone`. ~1 hour.
-- **T1-C. macOS / linux-arm64 binaries** — only linux-x64 + win32-x64 ship today. Either expand `bin/raindrop.js` to support more platforms (requires cross-compile in CI) or document source-build as the only path. Open question: do we even own the platform set, or keep it narrow on purpose?
-- **T1-D. F-011 `loadConfig` cwd vs project root bug** — open bug in plugin, multi-project isolation broken. ~1-2 hours.
-- **T1-E. Public-release hygiene automation** — `Makefile`-equivalent that runs pre-publish checklist + smoke test against the published tarball (not local dist) on every future `npm publish`.
+- **T1-A. F-011 — `loadConfig` cwd vs project-root bug** (~1–2 h) — open bug, multi-project isolation broken. Spec: `ai-docs/specs/F-011-loadconfig-cwd-bug.md`.
+- **T1-B. daemon F-036 — default `event_name` `"opencode_session"` → `"agent_session"`** (~30 min) — 4 string replacements (`loadConfig()` + `EventShipper2` constructor, both bundles) + version bump `0.0.2 → 0.0.3` + static copy + SKILL.md refresh. Plan + line references: daemon repo PLAN F-036.
+- **T1-C. daemon F-037 — `RAINDROP_*` → `AGENTTRACE_*` env vars + `raindrop.json` → `agenttrace.json`** (~4–6 h) — 10 env vars, 5 config paths, new `AGENTTRACE_EVENT_NAME` resolution level; ships as `0.1.0` (breaking). Blocked on 3 Kolya decisions. Plan: daemon repo PLAN F-037.
+- **T1-D. Real `src/index.ts` + tsup pipeline** (~1–2 days) — ends the hand-edited `dist/` three-site lockstep cycle (original F-002 vision).
+- **T1-E. daemon F-034 twin-runs investigation** (~2–4 h, cross-repo) — plugin side may need dedupe before emit; root cause TBD, daemon F-034 has the repro plan.
+- **T1-F. Publish-hygiene automation** — pre-publish checklist script + smoke test against the published tarball.
 
 For detailed breakdown of every closed feature see `## Closed Features` below.
 
@@ -29,7 +30,7 @@ For detailed breakdown of every closed feature see `## Closed Features` below.
 
 ## Active Features
 
-### F-024 — Rename stack: `opencode-workshop-plugin` → `agenttrace-opencode-plugin`
+### F-024 — Rename stack: `opencode-workshop-plugin` → `agenttrace-opencode-plugin` — Closed 2026-10-08 (audit)
 
 **Context:** As of 2026-09-17 Kolya decided to rename the entire stack away from the overloaded `workshop` name. This repo becomes `@grudanov-nikolay/agenttrace-opencode-plugin` (version `0.0.1` → `0.1.0`). Companion repos:
 - `opencode-workshop` (daemon) → `agenttrace`
@@ -54,6 +55,8 @@ For detailed breakdown of every closed feature see `## Closed Features` below.
 - `npm deprecate @grudanov-nikolay/opencode-workshop-plugin@0.0.1`
 - `gh repo edit --rename` on `nikolay-grudanov/opencode-workshop-plugin` → `agenttrace-opencode-plugin`
 
+**Audit 2026-10-08:** publish happened as `0.0.2` (version corrected down from the planned `0.1.0` in commit `0bb4512`) — `npm view @grudanov-nikolay/agenttrace-opencode-plugin version` → `0.0.2`. GitHub rename done (remote = `nikolay-grudanov/agenttrace-opencode-plugin`). Still pending Kolya: `npm deprecate @grudanov-nikolay/opencode-workshop-plugin@0.0.1`.
+
 **Todos:**
 - [x] `package.json` rename + version bump + repo URLs
 - [x] `dist/index.js` patch (`package_default` literal block)
@@ -62,8 +65,8 @@ For detailed breakdown of every closed feature see `## Closed Features` below.
 - [x] `README.md` (header, intro, table, install command, install command in plugin config)
 - [x] `AGENTS.md` (package name, public repo, publishing command path)
 - [x] `scripts/install-local.sh` comments
-- [ ] Push to `origin/main` (Kolya action)
-- [ ] Live smoke test after Kolya publishes `0.1.0` and points OpenCode at the new package name
+- [x] Push to `origin/main` (done — repo in sync; remote renamed to `nikolay-grudanov/agenttrace-opencode-plugin`)
+- [x] Live smoke — `0.0.2` published and live: Workshop DB contains runs stamped `agenttrace-opencode-plugin 0.0.2` (the daemon repo's F-034 twin-runs diagnostic cites one such run)
 
 ### F-005 — `RAINDROP_LOCAL_WORKSHOP_URL` env-var precedence fix (fall back to file if env value is non-local)
 
@@ -242,7 +245,7 @@ Three independent paths now populate the attribute: task-args description (fixed
 - [x] F-002.1: re-apply all 6 KOLYA PATCHes (F-001 + 2× F-002.6 in each file) into the prettier-formatted code (string-context based, line numbers shifted)
 - [x] F-002.1: add 4 `// === SECTION: hook: <name> ===` markers per file (chat.message, tool.execute.after, experimental.session.compacting, experimental.chat.system.transform)
 - [x] F-002.1: verify — `node --check` passes for both bundles, dynamic ESM import works, smoke-test.sh still PASSES
-- [ ] Push F-002.1 (and F-002.4/2.5/2.6) to GitHub — **blocked on Kolya's explicit "push" per Miko-no-auto-commit rule; all 4 sub-features committed locally**
+- [x] Push F-002.1 (and F-002.4/2.5/2.6) — pushed long since; repo in sync with `origin/main`, everything consolidated into the `0.0.1` release per F-016
 
 ---
 
