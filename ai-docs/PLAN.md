@@ -15,14 +15,14 @@
 
 ## Roadmap (Tier 1, next-up) — 2026-10-19
 
-Current version: `0.0.2` (published under the new `agenttrace` name). Working tree: `0.0.2` + **F-040 (OpenCode v2 migration) implemented, uncommitted, unpublished**.
+Current version: `0.0.2` (published under the new `agenttrace` name). Working tree: `0.0.2` + F-040 (OpenCode v2 migration) **committed `fc0fc1e`, pushed, still unpublished**.
 
 Next-up items, in priority order:
 
-- **T1-0. F-040 — commit + publish `0.0.3`** (Kolyan-gated) — the v2 adapter only helps from the *static copy*; the published `0.0.2` tarball is still v1-only and throws `PluginModule.LoadError` under OpenCode v2. Commit needs an explicit Kolya command; `npm publish` likewise. After publish, re-add `"@grudanov-nikolay/agenttrace-opencode-plugin@0.0.3"` to `~/.config/opencode/opencode.jsonc` `plugins`.
+- **T1-0. F-040 — publish `0.0.3`** (Kolya-gated) — the v2 adapter only helps from the *static copy*; the published `0.0.2` tarball is still v1-only and throws `PluginModule.LoadError` under OpenCode v2. Code is committed (`fc0fc1e`) and pushed; only `npm publish` + GitHub Release remain. Kolya deferred this on 2026-10-19 in favour of adding more changes first. After publish, re-add `"@grudanov-nikolay/agenttrace-opencode-plugin@0.0.3"` to `~/.config/opencode/opencode.jsonc` `plugins`.
 - **T1-A. F-011 — `loadConfig` cwd vs project-root bug** (~1–2 h) — open bug, multi-project isolation broken. Spec: `ai-docs/specs/F-011-loadconfig-cwd-bug.md`.
 - **T1-B. daemon F-036 — default `event_name` `"opencode_session"` → `"agent_session"`** (~30 min) — 4 string replacements (`loadConfig()` + `EventShipper2` constructor, both bundles) + static copy + SKILL.md refresh. Ships with the F-040 payload as `0.0.3`. Plan + line references: daemon repo PLAN F-036.
-- **T1-C. daemon F-037 — `RAINDROP_*` → `AGENTTRACE_*` env vars + `raindrop.json` → `agenttrace.json`** (~4–6 h) — 10 env vars, 5 config paths, new `AGENTTRACE_EVENT_NAME` resolution level; ships as `0.1.0` (breaking). Blocked on 3 Kolya decisions. Plan: daemon repo PLAN F-037.
+- **T1-C. F-042 — `RAINDROP_*` → `AGENTTRACE_*` env vars + `raindrop.json` → `agenttrace.json`** (~2–3 h, plugin side) — **12** env vars (the original F-037 table missed the two F-006 sidepanel ones), 5 config paths, new `AGENTTRACE_EVENT_NAME` resolution level. Ships as `0.1.0` (breaking, hard cut — no back-compat per Kolya 2026-10-19). Spec lives in the daemon repo as F-037; the plugin-repo entry is F-042. **All design questions closed 2026-10-19**: drop the `process.execPath.endsWith("raindrop")` check (interpreter-shape test instead), and strip "Raindrop AI" from LICENSE/AGENTS.md in favour of a fork notice + upstream links in README.
 - **T1-D. Real `src/index.ts` + tsup pipeline** (~1–2 days) — ends the hand-edited `dist/` cycle. F-040 showed the pain concretely: ~2850 lines of hand-patched bundle + a hand-rolled `gen-cjs.mjs`, and the `SIDEPANEL_SYSTEM_SUPPRESS` / `nodeRequire` shims exist only because there is no real build step (the original F-002 vision).
 - **T1-E. daemon F-034 twin-runs investigation** (~2–4 h, cross-repo) — plugin side may need dedupe before emit; root cause TBD, daemon F-034 has the repro plan.
 - **T1-F. Publish-hygiene automation** — pre-publish checklist script + smoke test against the published tarball. Would have caught the "published tarball has no `dist/`" class of bugs.
@@ -33,6 +33,139 @@ For detailed breakdown of every closed feature see `## Closed Features` below.
 ---
 
 ## Active Features
+
+### F-042 — Rename `RAINDROP_*` env vars and `raindrop.json` → `AGENTTRACE_*` / `agenttrace.json` — OPEN (not started)
+
+**Context:** This is the plugin-repo mirror of **F-037** in `agenttrace/ai-docs/PLAN.md` (project convention: every feature gets an entry in its own repo). Kolya 2026-10-19, verbatim:
+
+> «1. Файлы настроек» демона не переименовать везде
+> 2. да нужно переменовать
+> 3. жёстко, «пользователи сами переименуют»
+> 4. Добавь фичу в репу
+
+Translated:
+
+1. **Env vars — rename.** All 12 plugin `RAINDROP_*` → `AGENTTRACE_*`.
+2. **Daemon on-disk paths — NOT renamed, anywhere** (`~/.raindrop/*` stays). Not this repo's work, recorded here so nobody assumes otherwise.
+3. **Back-compat — hard NO.** No dual-read of `raindrop.json`, no fallback to `RAINDROP_*`, no deprecation warnings. Users rename themselves.
+4. **This feature entry** is item 4 of Kolya's answer.
+
+**Env var rename map — 12 vars (the original F-037 table had 10; grep on 2026-10-19 found the two F-006 sidepanel vars were missing):**
+
+| Old (`RAINDROP_*`) | New (`AGENTTRACE_*`) | Where in `dist/index.js` |
+|---|---|---|
+| `RAINDROP_API_URL` | `AGENTTRACE_API_URL` | `TraceShipper2` / `EventShipper2` config |
+| `RAINDROP_WRITE_KEY` | `AGENTTRACE_WRITE_KEY` | `loadConfig` |
+| `RAINDROP_PROJECT_ID` | `AGENTTRACE_PROJECT_ID` | `loadConfig` |
+| `RAINDROP_LOCAL_WORKSHOP_URL` | `AGENTTRACE_LOCAL_WORKSHOP_URL` | `resolveLocalDebuggerBaseUrl` |
+| `RAINDROP_LOCAL_DEBUGGER` | `AGENTTRACE_LOCAL_DEBUGGER` | `resolveLocalDebuggerBaseUrl` |
+| `RAINDROP_WORKSHOP` | `AGENTTRACE_WORKSHOP` | daemon URL resolution |
+| `RAINDROP_DEBUG` | `AGENTTRACE_DEBUG` | `loadConfig` |
+| `RAINDROP_CAPTURE_SYSTEM_PROMPT` | `AGENTTRACE_CAPTURE_SYSTEM_PROMPT` | `loadConfig` |
+| `RAINDROP_TRACE_ONLY` | `AGENTTRACE_TRACE_ONLY` | `plugin()` trace-only redirect |
+| `RAINDROP_EVENT_METADATA` | `AGENTTRACE_EVENT_METADATA` | `loadConfig` |
+| `RAINDROP_SIDEPANEL_ACTIVE` | `AGENTTRACE_SIDEPANEL_ACTIVE` | F-006 sidepanel bootstrap |
+| `RAINDROP_SIDEPANEL_RUN_ID` | `AGENTTRACE_SIDEPANEL_RUN_ID` | F-006 sidepanel bootstrap + system prompt |
+
+**Config filename rename — 5 paths (field names inside stay unchanged):**
+
+`~/.config/opencode/raindrop.json` → `agenttrace.json`, plus the same rename under `<projectDirectory>/.opencode/`, `<projectDirectory>/`, `<process.cwd()>/.opencode/`, `<process.cwd()>/`. Resolved by `loadConfig` (line ~1217), merged late-overrides-early.
+
+Fields that do **not** change: `write_key`, `api_url`, `project_id`, `local_workshop_url`, `event_name`, `eventName`, `debug`, `capture_system_prompt`, `trace_only`. Only the filename and the env prefixes move.
+
+**New: `AGENTTRACE_EVENT_NAME` resolution level.** F-035 v2. Chain becomes: (1) per-message `part.metadata.eventName` → (2) `AGENTTRACE_EVENT_METADATA` JSON `.eventName` → (3) **`AGENTTRACE_EVENT_NAME`** (new, single-value override) → (4) `agenttrace.json:eventName` / `:event_name` → (5) default `"agent_session"`.
+
+**`process.execPath.endsWith("raindrop")` — RESOLVED (Kolya 2026-10-19): drop the check.** Kolya verbatim: «1. выкинь проверку».
+
+Replace the name-based branch in the F-006 sidepanel bootstrap block (line numbers shifted by F-040 — re-grep before editing):
+
+```js
+// BEFORE
+const isCompiled = (process.execPath || "").toLowerCase().endsWith("raindrop");
+const command = isCompiled
+  ? [process.execPath, "workshop", "mcp"]
+  : ["bun", daemonSrc, "workshop", "mcp"];
+
+// AFTER — decide by interpreter shape, not by product name
+const exec = (process.execPath || "").toLowerCase();
+const base = exec.slice(exec.lastIndexOf("/") + 1);
+const looksBundled = !/^(node|bun|deno)(\.exe)?$/.test(base);
+const command = looksBundled
+  ? [process.execPath, "workshop", "mcp"]
+  : ["bun", daemonSrc, "workshop", "mcp"];
+```
+
+Rationale: F-025 keeps `PLATFORM_MAP` unchanged, so the bundled binary is still `raindrop-linux-x64` — an `endsWith("agenttrace")` test would never match it. The name-based check is dead code that drags the old name into every future grep.
+
+**"Raindrop AI" attribution — RESOLVED (Kolya 2026-10-19).** Kolya verbatim: «2. убери тоже, достаточно в ридми описания что это форк и ссылки на проект оригинал». Strip "Raindrop AI" from `LICENSE` and `AGENTS.md`; put the credit in `README.md` as an explicit fork notice ("this is a fork of raindrop-ai/workshop") plus links to the upstream GitHub repo, npm packages and site. `package.json` `description` rewritten in fork form with the upstream link. Executed in the same pass as F-037 / F-043 so the three repos stay consistent.
+
+**Files to edit:**
+
+- `dist/index.js` (~54 grep hits for `RAINDROP_*`, plus `raindrop.json` paths).
+- `dist/index.cjs` — regenerate via `node scripts/gen-cjs.mjs` (F-040), do not hand-edit.
+- `~/.config/opencode/plugins/opencode-workshop-plugin.js` — static copy; **file name must stay `opencode-workshop-plugin.js`** (loader-compat with existing installs).
+- `package.json` (version bump + description rewrite in fork form).
+- `LICENSE` — "Raindrop AI" attribution removed.
+- `AGENTS.md` — "Raindrop AI" attribution removed.
+- `README.md` — explicit fork notice ("this is a fork of raindrop-ai/workshop") + links to the upstream GitHub repo, npm packages and site.
+- Kolya's machine: rename `~/.config/opencode/raindrop.json` → `agenttrace.json` (content unchanged).
+
+**Acceptance criteria:**
+
+- [ ] All 12 `RAINDROP_*` vars renamed to `AGENTTRACE_*` in `dist/index.js`.
+- [ ] All 5 `raindrop.json` config paths renamed to `agenttrace.json`.
+- [ ] `AGENTTRACE_EVENT_NAME` env var added as resolution level 3.
+- [ ] `process.execPath.endsWith("raindrop")` check **deleted**, replaced with the interpreter-shape test (`node`/`bun`/`deno` → `bun <daemonSrc>`, else bundled binary → `process.execPath`).
+- [ ] "Raindrop AI" attribution removed from `LICENSE` and `AGENTS.md`; fork notice + upstream links present in `README.md`.
+- [ ] **No fallback anywhere** — grep for `RAINDROP_*` and `raindrop.json` returns zero *runtime reads* (comments and upstream credits exempt).
+- [ ] F-006 sidepanel block now writes `AGENTTRACE_WORKSHOP_URL` / `AGENTTRACE_WORKSHOP_AGENT_PROVIDER` / `AGENTTRACE_WORKSHOP_ANNOTATION_SOURCE` into its generated `opencode.json` — must match F-043 on the daemon side or the sidepanel breaks.
+- [ ] Three-site lockstep: `dist/index.js` regenerated → CJS via `scripts/gen-cjs.mjs` → static copy; `node --check` on both.
+- [ ] Static copy file name unchanged.
+- [ ] `~/.config/opencode/raindrop.json` → `agenttrace.json` on Kolya's machine.
+- [ ] Version bumped `0.0.2 → 0.1.0` (breaking).
+- [ ] Release notes list the 12 env vars + the config filename as breaking changes.
+- [ ] README, `package.json` description, AGENTS.md updated.
+- [ ] Live smoke: `AGENTTRACE_EVENT_NAME=qwen_code_session` → verify the Workshop dropdown shows that agent.
+- [ ] Smoke-test harness (`/tmp/opencode/v2-smoke/smoke.mjs` pattern) re-run against the renamed bundle.
+
+**Effort:** 2-3 hours (the F-040 adapter does not touch env names, so the rename is contained to `loadConfig` + the shippers + the sidepanel block).
+
+**Cross-repo impact:**
+
+- `agenttrace/` daemon — **F-037** holds the spec; **F-043** renames the daemon's own 45 `RAINDROP_*` vars and must ship in the same release.
+- Ships as one breaking `0.1.0` alongside F-025 (CLI), F-036 (`event_name` default), F-043.
+
+**Out of scope:**
+
+- Renaming `~/.raindrop/**` on-disk paths (Kolya 2026-10-19 — daemon-side, not renamed at all).
+- Renaming the static copy **file** (`opencode-workshop-plugin.js`) — loader-compat.
+- Keeping a `raindrop.json` fallback — explicitly rejected.
+- Deprecation warnings / migration shims.
+- Renaming historical `HANDOFF-*.md` references.
+
+**Reference:** F-037 in `agenttrace/ai-docs/PLAN.md` (the daemon-repo copy of this spec), F-043 (daemon env vars).
+
+**Todos:**
+
+- [x] Kolya decides `endsWith(...)` handling — **ANSWERED 2026-10-19: «выкинь проверку»**
+- [x] Kolya decides "Raindrop AI" attribution — **ANSWERED 2026-10-19: remove from LICENSE + AGENTS.md, fork notice + upstream links in README**
+- [ ] Delete the `endsWith("raindrop")` check, replace with the interpreter-shape test.
+- [ ] Strip "Raindrop AI" from `LICENSE` + `AGENTS.md`; add fork notice + upstream links to `README.md`.
+- [ ] Rename 12 env vars in `dist/index.js`.
+- [ ] Rename 5 config paths in `loadConfig`.
+- [ ] Add `AGENTTRACE_EVENT_NAME` (level 3 of the chain).
+- [ ] Update the F-006 sidepanel block's generated `opencode.json` env names.
+- [ ] Regenerate `dist/index.cjs` via `node scripts/gen-cjs.mjs`.
+- [ ] Copy to `~/.config/opencode/plugins/opencode-workshop-plugin.js` (same filename) + `node --check` both.
+- [ ] Rename `~/.config/opencode/raindrop.json` → `agenttrace.json` on Kolya's machine.
+- [ ] Grep-verify zero runtime `RAINDROP_*` / `raindrop.json` reads.
+- [ ] Bump `0.0.2 → 0.1.0`.
+- [ ] README + AGENTS.md + `package.json` description.
+- [ ] Re-run the mock-ctx smoke test.
+- [ ] Publish `0.1.0` + GitHub Release (Kolya-gated), then re-add the npm entry to `opencode.jsonc`.
+- [ ] Move to `## Closed Features`.
+
+---
 
 ### F-040 — OpenCode v2 migration: dual-version default export + v2 hook adapter — implemented 2026-10-19 (uncommitted)
 
