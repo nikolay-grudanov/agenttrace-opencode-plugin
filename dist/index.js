@@ -1185,7 +1185,16 @@ var TraceShipper = class {
 
 // ../core/dist/index.node.js
 import { AsyncLocalStorage } from "async_hooks";
+import { createRequire } from "module";
 globalThis.RAINDROP_ASYNC_LOCAL_STORAGE = AsyncLocalStorage;
+// KOLYA PATCH (F-040): Node-ESM compatible `require` shim.
+// OpenCode v2 loads this bundle with Bun (where `require` exists in ESM), but the
+// same file is also imported by plain `node` (smoke tests, npm consumers, and the
+// day OpenCode ships a Node runtime). In Node ESM `require` is undefined and every
+// bare `nodeRequire("node:*")` call below — most importantly `collectGitContext`(),
+// which runs on EVERY plugin() call — throws ReferenceError, silently disabling
+// the whole plugin. Resolve through createRequire instead.
+var nodeRequire = typeof require === "function" ? require : /* @__PURE__ */ createRequire(process.cwd() + "/__agenttrace_plugin__.cjs");
 var SUPPRESS_TRACING_KEY = /* @__PURE__ */ Symbol.for("OpenTelemetry SDK Context Key SUPPRESS_TRACING");
 function findOtelContextManager() {
   var _a;
@@ -1596,7 +1605,11 @@ function getHostname() {
   try {
     const bunGlobal = globalThis;
     if ((_a = bunGlobal.Bun) == null ? void 0 : _a.hostname) return bunGlobal.Bun.hostname;
-    return __require("os").hostname();
+    // KOLYA PATCH (F-040): `__require` is esbuild's CJS-interop helper — under
+    // ESM it degrades to the raw string argument, so `__require("os").hostname()`
+    // always threw and fell through to the HOSTNAME-env fallback (which throws
+    // again when HOSTNAME is unset, e.g. under `systemd`/spawned processes).
+    return nodeRequire("os").hostname();
   } catch (e) {
     const h = process.env["HOSTNAME"];
     if (h === void 0 || h === "") throw new Error("HOSTNAME env is not set");
@@ -2275,17 +2288,12 @@ type: ${errorName != null ? errorName : "UnknownError"}`;
       try {
         // F-006 sidepanel: prepend a short role/MCP block so the agent
         // understands the Workshop sidepanel context. Only when sidepanelMode.
-        if (sidepanelMode) {
-          const runId = process.env.RAINDROP_SIDEPANEL_RUN_ID || "<none>";
-          output.system = [
-            [
-              "You are the assistant in the Raindrop Workshop sidepanel — the local trace debugger for AI agents.",
-              `Local Workshop MCP server is configured as 'workshop'. Use its tools (workshop__get_current_run, workshop__get_run_outline, workshop__query_traces, workshop__search_run, workshop__get_span_payload, workshop__get_span_context, workshop__annotate, workshop__replay_run, workshop__show_in_ui, workshop__ask_agent) when the user references the focused run, this trace, the current screen, or a captured span.`,
-              `Currently focused Workshop run: ${runId}. Treat the user's first message as the in-flight request, not as a context reset.`,
-              `Reply in the user's language.`,
-            ].join("\n"),
-            ...output.system,
-          ];
+        // KOLYA PATCH (F-040): on OpenCode v2 the adapter injects the very same
+        // block itself via ctx.session.hook("context") (system.unshift) and then
+        // bumps SIDEPANEL_SYSTEM_SUPPRESS while it delegates here, so the block
+        // is never prepended twice. v1 path (suppress === 0) is unchanged.
+        if (sidepanelMode && SIDEPANEL_SYSTEM_SUPPRESS === 0) {
+          output.system = [sidepanelSystemBlock(), ...output.system];
         }
         if (!config.captureSystemPrompt) return;
         const sessionID = input.sessionID;
@@ -2316,7 +2324,7 @@ type: ${errorName != null ? errorName : "UnknownError"}`;
 // correctness path. Runs outside a git worktree return nulls.
 function collectGitContext(worktreePath) {
   if (!worktreePath) return { project: null, branch: null, commit: null };
-  const cp = require("node:child_process");
+  const cp = nodeRequire("node:child_process");
   const safe = (args) => {
     try {
       return cp.execFileSync("git", args, { cwd: worktreePath, encoding: "utf8", timeout: 1500, stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -2328,9 +2336,366 @@ function collectGitContext(worktreePath) {
   const branch = safe(["rev-parse", "--abbrev-ref", "HEAD"]);
   const toplevel = safe(["rev-parse", "--show-toplevel"]);
   return {
-    project: toplevel ? require("node:path").basename(toplevel) : null,
+    project: toplevel ? nodeRequire("node:path").basename(toplevel) : null,
     branch: branch && branch !== "HEAD" ? branch : null,
     commit,
+  };
+}
+// === KOLYA PATCH (F-040): OpenCode v2 plugin adapter ===============================
+// OpenCode 2.x rejects the legacy v1 default export (`export default function()
+// { return { hooks } }`) with:
+//   PluginModule.LoadError: Plugin must export a default definition with an id
+//   and an effect or setup function. (cause: SchemaError(Expected object at ["default"]))
+// The v2 contract requires `export default { id, setup(ctx) }` (or `{ id, effect }`).
+// Rather than rewriting ~600 lines of span logic, the v2 adapter boots the
+// existing legacy hook factory and translates v2 registrations/events into the
+// exact v1 shapes createHooks() already understands.
+//
+// v2 -> v1 mapping (see ai-docs/PLAN.md, Feature F-040):
+//   ctx.event.subscribe()          -> hooks.event({ event: { type, properties } })
+//   session.created/idle/compacted/deleted -> same names, properties.sessionID
+//   session.execution.failed       -> session.error  (properties.error {name, data.message})
+//   session.text.ended             -> message.part.updated (part.type = "text")
+//   session.reasoning.ended        -> message.part.updated (part.type = "reasoning")
+//   session.step.started           -> memo { providerID, modelID, started }
+//   session.step.ended|failed      -> message.updated (info.role = "assistant")
+//   ctx.tool.hook("execute.before")-> hooks["tool.execute.before"]
+//   ctx.tool.hook("execute.after") -> hooks["tool.execute.after"] (status split)
+//   ctx.session.hook("prompt")     -> hooks["chat.message"]
+//   ctx.session.hook("context")    -> hooks["experimental.chat.system.transform"]
+//   ctx.session.hook("compaction") -> hooks["experimental.session.compacting"]
+// Tool spans need no event synthesis: ctx.tool.hook("execute.after") fires for
+// both "completed" and "error" results, and endPendingToolSpanWithError() is
+// idempotent anyway (it returns false when the callID is already closed).
+var ACTIVE_SIDEPANEL_MODE = false;
+var SIDEPANEL_SYSTEM_SUPPRESS = 0;
+
+function sidepanelSystemBlock() {
+  const runId = process.env.RAINDROP_SIDEPANEL_RUN_ID || "<none>";
+  return [
+    "You are the assistant in the Raindrop Workshop sidepanel — the local trace debugger for AI agents.",
+    `Local Workshop MCP server is configured as 'workshop'. Use its tools (workshop__get_current_run, workshop__get_run_outline, workshop__query_traces, workshop__search_run, workshop__get_span_payload, workshop__get_span_context, workshop__annotate, workshop__replay_run, workshop__show_in_ui, workshop__ask_agent) when the user references the focused run, this trace, the current screen, or a captured span.`,
+    `Currently focused Workshop run: ${runId}. Treat the user's first message as the in-flight request, not as a context reset.`,
+    `Reply in the user's language.`,
+  ].join("\n");
+}
+
+function v2Basename(uri) {
+  const clean = String(uri ?? "").split("?")[0].split("#")[0];
+  const seg = clean.split("/").filter(Boolean).pop();
+  return seg && seg.length > 0 ? seg : "file";
+}
+
+function v2MimeType(uri) {
+  const clean = String(uri ?? "").split("?")[0].split("#")[0];
+  const dot = clean.lastIndexOf(".");
+  const ext = dot === -1 ? "" : clean.slice(dot + 1).toLowerCase();
+  const map = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    bmp: "image/bmp",
+    svg: "image/svg+xml",
+    avif: "image/avif",
+    heic: "image/heic",
+    heif: "image/heif",
+    tif: "image/tiff",
+    tiff: "image/tiff",
+    ico: "image/x-icon",
+  };
+  return map[ext] ?? "application/octet-stream";
+}
+
+function v2Finite(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+async function v2Setup(ctx) {
+  const location = (ctx && ctx.location) || {};
+  const directory =
+    typeof location.directory === "string" && location.directory.length > 0
+      ? location.directory
+      : process.cwd();
+  const v2Log = (level, message) => console.log(`[oc-wsp] [${level}] ${message}`);
+
+  let hooks;
+  try {
+    // v1 PluginInput shape. The v2 Context has no `worktree` string (the worktree
+    // domain is a separate API), so fall back to the project directory.
+    hooks = await plugin({ directory, worktree: directory });
+  } catch (err) {
+    v2Log("error", `OpenCode v2 setup failed: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+  if (!hooks || typeof hooks !== "object") return;
+  if (
+    typeof hooks.event !== "function" &&
+    typeof hooks["tool.execute.before"] !== "function" &&
+    typeof hooks["chat.message"] !== "function"
+  ) {
+    v2Log("warn", "OpenCode v2: no tracing hooks registered (plugin disabled?)");
+    return;
+  }
+  v2Log("info", `OpenCode v2 adapter active for ${directory}`);
+
+  const disposables = [];
+  const track = async (factory, label) => {
+    try {
+      const registration = await factory();
+      if (registration && typeof registration.dispose === "function") disposables.push(registration);
+    } catch (err) {
+      v2Log("warn", `OpenCode v2 hook registration failed (${label}): ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  // --- events: v2 -> legacy { type, properties } ---------------------------------
+  const controller = new AbortController();
+  const stepMeta = new Map(); // "sessionID:messageID" -> { providerID, modelID, started }
+
+  const emit = async (type, properties) => {
+    if (typeof hooks.event !== "function") return;
+    try {
+      await hooks.event({ event: { type, properties } });
+    } catch (err) {
+      v2Log("error", `OpenCode v2 event adapter ${type}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  void (async () => {
+    try {
+      for await (const ev of ctx.event.subscribe({ signal: controller.signal })) {
+        if (!ev || typeof ev.type !== "string") continue;
+        const data = (ev && ev.data) || {};
+        const sessionID = data.sessionID;
+        const messageID = data.assistantMessageID;
+        switch (ev.type) {
+          case "session.created":
+            await emit("session.created", {
+              sessionID,
+              info: { id: sessionID, parentID: data.parentID },
+            });
+            break;
+          case "session.compacted":
+            await emit("session.compacted", { sessionID });
+            break;
+          case "session.idle":
+            await emit("session.idle", { sessionID });
+            break;
+          case "session.deleted":
+            await emit("session.deleted", { sessionID });
+            break;
+          case "session.execution.failed": {
+            const err = data.error || {};
+            const message = typeof err.message === "string" ? err.message : "";
+            await emit("session.error", {
+              sessionID,
+              error: {
+                name: typeof err.type === "string" && err.type.length > 0 ? err.type : "UnknownError",
+                message,
+                data: { message },
+              },
+            });
+            break;
+          }
+          case "session.step.started":
+            if (sessionID && messageID) {
+              const model = data.model || {};
+              stepMeta.set(`${sessionID}:${messageID}`, {
+                providerID: typeof model.providerID === "string" ? model.providerID : "",
+                modelID: typeof model.id === "string" ? model.id : "",
+                started: typeof data.started === "number" ? data.started : void 0,
+              });
+            }
+            break;
+          case "session.text.ended":
+            if (sessionID && messageID && typeof data.text === "string") {
+              await emit("message.part.updated", {
+                part: { sessionID, messageID, type: "text", text: data.text },
+              });
+            }
+            break;
+          case "session.reasoning.ended":
+            if (sessionID && messageID && typeof data.text === "string") {
+              await emit("message.part.updated", {
+                part: { sessionID, messageID, type: "reasoning", text: data.text },
+              });
+            }
+            break;
+          case "session.step.ended":
+          case "session.step.failed": {
+            if (!sessionID || !messageID) break;
+            const key = `${sessionID}:${messageID}`;
+            const memo = stepMeta.get(key) || {};
+            stepMeta.delete(key);
+            const tokens = data.tokens || {};
+            const completedAt = typeof ev.created === "number" ? ev.created : Date.now();
+            const info = {
+              role: "assistant",
+              id: messageID,
+              sessionID,
+              time: {
+                created: typeof memo.started === "number" ? memo.started : completedAt,
+                completed: completedAt,
+              },
+              tokens: {
+                input: v2Finite(tokens.input),
+                output: v2Finite(tokens.output),
+                reasoning: v2Finite(tokens.reasoning),
+              },
+              providerID: memo.providerID || "",
+              modelID: memo.modelID || "",
+              finish: typeof data.finish === "string" && data.finish.length > 0 ? data.finish : "stop",
+            };
+            if (ev.type === "session.step.failed") {
+              const err = data.error || {};
+              info.error = {
+                name: typeof err.type === "string" && err.type.length > 0 ? err.type : "UnknownError",
+                data: { message: typeof err.message === "string" ? err.message : "" },
+              };
+            }
+            await emit("message.updated", { info });
+            break;
+          }
+          default:
+            break;
+        }
+      }
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        v2Log("error", `OpenCode v2 event stream stopped: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  })();
+
+  // --- tool hooks: ctx.tool.hook -> legacy tool.execute.* -------------------------
+  if (ctx.tool && typeof ctx.tool.hook === "function") {
+    if (typeof hooks["tool.execute.before"] === "function") {
+      const legacy = hooks["tool.execute.before"];
+      await track(
+        () =>
+          ctx.tool.hook("execute.before", async (e) => {
+            const input = {
+              tool: e.tool,
+              sessionID: e.sessionID,
+              callID: e.id,
+              args: e.input,
+              agent: e.agent,
+              messageID: e.messageID,
+            };
+            // v1 read the (possibly rewritten) args from the *output* object.
+            return legacy(input, { args: e.input });
+          }),
+        "tool.execute.before",
+      );
+    }
+
+    if (typeof hooks["tool.execute.after"] === "function") {
+      const legacy = hooks["tool.execute.after"];
+      await track(
+        () =>
+          ctx.tool.hook("execute.after", async (e) => {
+            const input = {
+              tool: e.tool,
+              sessionID: e.sessionID,
+              callID: e.id,
+              args: e.input,
+              agent: e.agent,
+              messageID: e.messageID,
+            };
+            if (e.status === "error") {
+              const err = e.error || {};
+              const message = typeof err.message === "string" ? err.message : String(err);
+              const name = typeof err._tag === "string" && err._tag.length > 0 ? err._tag : "Tool.Error";
+              return legacy(input, {
+                error: { name, message, data: { message } },
+                metadata: err.metadata,
+              });
+            }
+            const result = e.result || {};
+            return legacy(input, {
+              output: result.output,
+              content: result.content,
+              metadata: result.metadata,
+            });
+          }),
+        "tool.execute.after",
+      );
+    }
+  }
+
+  // --- session hooks ---------------------------------------------------------------
+  if (!ctx.session || typeof ctx.session.hook !== "function") {
+    v2Log("warn", "OpenCode v2: ctx.session.hook unavailable — prompts/system prompt not captured");
+  } else {
+    if (typeof hooks["chat.message"] === "function") {
+      const legacy = hooks["chat.message"];
+      await track(
+        () =>
+          ctx.session.hook("prompt", async (e) => {
+            const prompt = (e && e.prompt) || {};
+            const parts = [
+              {
+                type: "text",
+                text: typeof prompt.text === "string" ? prompt.text : "",
+                metadata: e ? e.metadata : void 0,
+              },
+            ];
+            const files = Array.isArray(prompt.files) ? prompt.files : [];
+            for (const file of files) {
+              if (!file || typeof file.uri !== "string" || file.uri.length === 0) continue;
+              const name =
+                typeof file.name === "string" && file.name.length > 0 ? file.name : v2Basename(file.uri);
+              parts.push({ type: "file", filename: name, mediaType: v2MimeType(file.uri), url: file.uri });
+            }
+            return legacy({ sessionID: e.sessionID }, { parts });
+          }),
+        "session.hook(prompt)",
+      );
+    }
+
+    if (typeof hooks["experimental.chat.system.transform"] === "function") {
+      const legacy = hooks["experimental.chat.system.transform"];
+      await track(
+        () =>
+          ctx.session.hook("context", async (e) => {
+            const system = Array.isArray(e.system) ? e.system : [];
+            if (ACTIVE_SIDEPANEL_MODE) {
+              system.unshift({ type: "text", text: sidepanelSystemBlock() });
+            }
+            // The legacy hook works on string[] — flatten v2 SystemPart objects.
+            const flat = system.map((p) =>
+              typeof p === "string" ? p : typeof p?.text === "string" ? p.text : "",
+            );
+            SIDEPANEL_SYSTEM_SUPPRESS += 1;
+            try {
+              return await legacy({ sessionID: e.sessionID }, { system: flat });
+            } finally {
+              SIDEPANEL_SYSTEM_SUPPRESS -= 1;
+            }
+          }),
+        "session.hook(context)",
+      );
+    }
+
+    if (typeof hooks["experimental.session.compacting"] === "function") {
+      const legacy = hooks["experimental.session.compacting"];
+      await track(
+        () => ctx.session.hook("compaction", async (e) => legacy({ sessionID: e.sessionID }, void 0)),
+        "session.hook(compaction)",
+      );
+    }
+  }
+
+  return async () => {
+    controller.abort();
+    for (const registration of disposables.reverse()) {
+      try {
+        await registration.dispose();
+      } catch {}
+    }
+    v2Log("info", "OpenCode v2 adapter unloaded");
   };
 }
 async function plugin(input) {
@@ -2340,10 +2705,10 @@ async function plugin(input) {
   // to ~/.raindrop/trace.log (append). Keeps TUI stdout clean for the chat.
   // Backwards-compatible: default is to write to stdout (existing behaviour).
   if (config.traceOnly) {
-    const TRACE_LOG_PATH = require("node:os").homedir() + "/.raindrop/trace.log";
-    const fs = require("node:fs");
+    const TRACE_LOG_PATH = nodeRequire("node:os").homedir() + "/.raindrop/trace.log";
+    const fs = nodeRequire("node:fs");
     try {
-      fs.mkdirSync(require("node:os").homedir() + "/.raindrop", { recursive: true });
+      fs.mkdirSync(nodeRequire("node:os").homedir() + "/.raindrop", { recursive: true });
     } catch (e) {}
     const stamp = () => new Date().toISOString();
     console.log = (...args) => {
@@ -2406,12 +2771,16 @@ async function plugin(input) {
   // Sidepanel system prompt is injected via experimental.chat.system.transform
   // (see above). All errors are silent — bootstrap is best-effort.
   const sidepanelMode = hasLocalDestination && process.env.RAINDROP_SIDEPANEL_ACTIVE === "1";
+  // KOLYA PATCH (F-040): expose the resolved sidepanel flag at module scope so the
+  // OpenCode v2 adapter can inject the sidepanel system block without duplicating
+  // the (config-internal) hasLocalDestination logic.
+  ACTIVE_SIDEPANEL_MODE = sidepanelMode;
   let workshopConfigDir = null;
   if (sidepanelMode) {
     try {
-      const os = require("node:os");
-      const fs = require("node:fs");
-      const path = require("node:path");
+      const os = nodeRequire("node:os");
+      const fs = nodeRequire("node:fs");
+      const path = nodeRequire("node:path");
       const cacheRoot = path.join(os.homedir(), ".cache", "workshop-sidepanel");
       try { fs.mkdirSync(cacheRoot, { recursive: true }); } catch {}
       // Sweep stale entries older than 1 hour.
@@ -2431,9 +2800,19 @@ async function plugin(input) {
       // `args` is not a separate field — anything beyond `command` is ignored.
       // Run via `bun src/index.ts workshop mcp` so the MCP server uses the
       // workshop source the plugin was loaded into (same daemon, same DB).
+      // KOLYA PATCH (F-040): repo was renamed opencode-workshop -> agenttrace
+      // (F-024, 2026-09-17); the old absolute path no longer exists on disk.
+      // Prefer the repo-relative layout, fall back to the legacy path.
+      const daemonSrcCandidates = [
+        "/home/gna/workspase/projects/agenttrace-stack/agenttrace/src/index.ts",
+        "/home/gna/workspase/projects/opencode-workshop/src/index.ts",
+      ];
+      const daemonSrc = daemonSrcCandidates.find((p) => {
+        try { return nodeRequire("node:fs").existsSync(p); } catch { return false; }
+      }) ?? daemonSrcCandidates[0];
       const command = isCompiled
         ? [process.execPath, "workshop", "mcp"]
-        : ["bun", "/home/gna/workspase/projects/opencode-workshop/src/index.ts", "workshop", "mcp"];
+        : ["bun", daemonSrc, "workshop", "mcp"];
       const oc = {
         $schema: "https://opencode.ai/config.json",
         mcp: {
@@ -2471,4 +2850,13 @@ async function plugin(input) {
   const hooks = createHooks(config, worktree, input.directory, eventShipper, traceShipper, gitContext, resolvedLocalUrl, sidepanelMode);
   return hooks;
 }
-export { plugin as default };
+// KOLYA PATCH (F-040): dual-version default export.
+//   - OpenCode >= 2.0  reads `id` + `setup(ctx)` (the v2 contract; `server` is
+//     stripped by the loader's non-strict zod schema and ignored).
+//   - OpenCode <  2.0  calls `server()` and consumes the legacy hooks object —
+//     byte-for-byte the pre-F-040 behaviour (object-form plugins since 1.18.29).
+export default {
+  id: PLUGIN_NAME,
+  setup: v2Setup,
+  server: plugin,
+};

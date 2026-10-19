@@ -13,22 +13,96 @@
 
 ---
 
-## Roadmap (Tier 1, next-up) — 2026-10-08
+## Roadmap (Tier 1, next-up) — 2026-10-19
 
-Current version: `0.0.2` (published under the new `agenttrace` name). Next-up items, in priority order:
+Current version: `0.0.2` (published under the new `agenttrace` name). Working tree: `0.0.2` + **F-040 (OpenCode v2 migration) implemented, uncommitted, unpublished**.
 
+Next-up items, in priority order:
+
+- **T1-0. F-040 — commit + publish `0.0.3`** (Kolyan-gated) — the v2 adapter only helps from the *static copy*; the published `0.0.2` tarball is still v1-only and throws `PluginModule.LoadError` under OpenCode v2. Commit needs an explicit Kolya command; `npm publish` likewise. After publish, re-add `"@grudanov-nikolay/agenttrace-opencode-plugin@0.0.3"` to `~/.config/opencode/opencode.jsonc` `plugins`.
 - **T1-A. F-011 — `loadConfig` cwd vs project-root bug** (~1–2 h) — open bug, multi-project isolation broken. Spec: `ai-docs/specs/F-011-loadconfig-cwd-bug.md`.
-- **T1-B. daemon F-036 — default `event_name` `"opencode_session"` → `"agent_session"`** (~30 min) — 4 string replacements (`loadConfig()` + `EventShipper2` constructor, both bundles) + version bump `0.0.2 → 0.0.3` + static copy + SKILL.md refresh. Plan + line references: daemon repo PLAN F-036.
+- **T1-B. daemon F-036 — default `event_name` `"opencode_session"` → `"agent_session"`** (~30 min) — 4 string replacements (`loadConfig()` + `EventShipper2` constructor, both bundles) + static copy + SKILL.md refresh. Ships with the F-040 payload as `0.0.3`. Plan + line references: daemon repo PLAN F-036.
 - **T1-C. daemon F-037 — `RAINDROP_*` → `AGENTTRACE_*` env vars + `raindrop.json` → `agenttrace.json`** (~4–6 h) — 10 env vars, 5 config paths, new `AGENTTRACE_EVENT_NAME` resolution level; ships as `0.1.0` (breaking). Blocked on 3 Kolya decisions. Plan: daemon repo PLAN F-037.
-- **T1-D. Real `src/index.ts` + tsup pipeline** (~1–2 days) — ends the hand-edited `dist/` three-site lockstep cycle (original F-002 vision).
+- **T1-D. Real `src/index.ts` + tsup pipeline** (~1–2 days) — ends the hand-edited `dist/` cycle. F-040 showed the pain concretely: ~2850 lines of hand-patched bundle + a hand-rolled `gen-cjs.mjs`, and the `SIDEPANEL_SYSTEM_SUPPRESS` / `nodeRequire` shims exist only because there is no real build step (the original F-002 vision).
 - **T1-E. daemon F-034 twin-runs investigation** (~2–4 h, cross-repo) — plugin side may need dedupe before emit; root cause TBD, daemon F-034 has the repro plan.
-- **T1-F. Publish-hygiene automation** — pre-publish checklist script + smoke test against the published tarball.
+- **T1-F. Publish-hygiene automation** — pre-publish checklist script + smoke test against the published tarball. Would have caught the "published tarball has no `dist/`" class of bugs.
+- **T1-G. daemon-side `graphify.js` plugin → v2** (out-of-repo for this repo, tracked by the umbrella `PLAN.md`) — `/home/gna/workspase/projects/agenttrace/.opencode/plugins/graphify.js` still fails to load under v2.
 
 For detailed breakdown of every closed feature see `## Closed Features` below.
 
 ---
 
 ## Active Features
+
+### F-040 — OpenCode v2 migration: dual-version default export + v2 hook adapter — implemented 2026-10-19 (uncommitted)
+
+**Context:** Kolya upgraded to **OpenCode v2.0.32** (major jump; the plugin was written against the 1.x plugin contract). Both plugins listed in the TUI banner *"2 plugins failed"*:
+
+1. Static copy `~/.config/opencode/plugins/opencode-workshop-plugin.js`:
+   `PluginModule.LoadError: Plugin must export a default definition with an id and an effect or setup function. (cause: SchemaError(Expected object at ["default"]))`
+2. npm entry `@grudanov-nikolay/opencode-workshop-plugin@0.1.0-kolya.15`:
+   `NpmInstallFailedError … No matching version found` — the `-kolya.N` versions were **never published** (local-only builds; no `dist/` in `~/.cache/opencode/packages/@grudanov-nikolay/`).
+
+The v2 loader (dumped from `~/.opencode/bin/opencode`) validates the module with a non-strict zod schema:
+```js
+z.object({ default: z.union([
+  z.object({ id: z.string(), effect: z.custom(e => typeof e === "function") }),
+  z.object({ id: z.string(), setup:  z.custom(e => typeof e === "function") })]) })
+// load(): definition = "effect" in parsed ? parsed : TY(parsed);
+//        effect: (ctx) => definition.effect({ ...ctx, options: target.options })
+```
+Consequences: `export default` must be an **object**; extra keys (e.g. `server`) are stripped, not rejected; the legacy hooks-API is **not** reachable through the v2 default export. Grep of the v2 binary: `tool.execute.before`, `tool.execute.after`, `chat.message`, `chat.params`, `experimental.chat.system.transform`, `bus.subscribe`, `PluginInput` — **0 occurrences**. Every legacy hook had to be re-implemented against the v2 API.
+
+**v1 → v2 mapping implemented (adapted from `@opencode/plugin@2.0.32` types + `/v2/docs/build/plugins`):**
+
+| v1 (legacy) | v2 |
+|---|---|
+| `export default function(){return {hooks}}` | `export default { id, setup(ctx), server: legacyFn }` |
+| `input.directory` / `input.worktree` | `ctx.location.directory` |
+| `event: async ({event}) => {…}` | `for await (const ev of ctx.event.subscribe({signal}))` |
+| `session.created` / `session.compacted` / `session.idle` / `session.deleted` | same event names in v2 ✅ |
+| `session.error` | `session.execution.failed` → `{name: error.type, message}` |
+| `message.part.updated` (text / reasoning) | `session.text.ended` / `session.reasoning.ended` |
+| `message.updated` | `session.step.ended` / `session.step.failed` (+ `session.step.started` memo for `providerID`/`modelID`/`started`) |
+| `tool.execute.before(input, output)` | `ctx.tool.hook("execute.before", e => …)` — args from `e.input` |
+| `tool.execute.after(input, result)` | `ctx.tool.hook("execute.after", e => …)` — `e.status === "completed" \| "error"` |
+| `chat.message` | `ctx.session.hook("prompt", e => …)` — `e.prompt.text` + `e.prompt.files[{uri,name?}]` |
+| `experimental.chat.system.transform` | `ctx.session.hook("context", e => …)` — `e.system: SystemPart[]` |
+| `experimental.session.compacting` | `ctx.session.hook("compaction", e => …)` |
+
+Tool parts were **not** synthesized from `session.tool.*`: `tool.execute.after` already closes the span in both branches and `endPendingToolSpanWithError()` is idempotent (no pending start → `return false`), while `tool.execute.after` tolerates a missing `startInfo` (just skips span creation). Subagent mapping now comes from `session.created.parentID` — more reliable than `result.metadata.sessionId`.
+
+**Side fixes shipped with F-040:**
+- **F-006 stale path** — `["bun", "…/projects/opencode-workshop/src/index.ts", …]` pointed at a directory removed by F-024; now a candidate list with `existsSync` probing, first entry `…/agenttrace-stack/agenttrace/src/index.ts`.
+- **Node-ESM `require` shim** — 9 bare `require("node:*")` calls (collectGitContext / trace-only redirect / sidepanel bootstrap / daemonSrc probe) plus `getHostname()`'s esbuild `__require("os")` helper (which degrades to the literal string `"os"` under ESM and threw `Error: HOSTNAME env is not set`, killing the whole `setup()`). Fixed via `import { createRequire } from "module"` + `var nodeRequire = typeof require === "function" ? require : createRequire(…)`. Not visible under Bun (OpenCode's runtime), but the plugin silently died under Node-ESM.
+- **sidepanel double-prepend** — `experimental.chat.system.transform` now guards on `SIDEPANEL_SYSTEM_SUPPRESS === 0`, because the v2 adapter already does `e.system.unshift({type:"text", text: sidepanelSystemBlock()})`.
+- **CJS drift** — `dist/index.cjs` was a stale snapshot (no `gitContext` argument in `createHooks`, 7 args instead of 8). Regenerated mechanically by the new `scripts/gen-cjs.mjs` (ESM → CJS rewriter with a `BINDINGS` table; unknown specifier/binding is a hard error so drift can't reappear silently).
+- **`~/.config/opencode/opencode.jsonc`** — key `plugin` → `plugins` (v2 renamed it); removed the never-published `@grudanov-nikolay/opencode-workshop-plugin@0.1.0-kolya.15` entry (backup: `opencode.jsonc.bak-pre-v2-migration`). The plugin is picked up by auto-discovery from `~/.config/opencode/plugins/`.
+
+**Out of scope / deferred:**
+- `npm publish @grudanov-nikolay/agenttrace-opencode-plugin@0.0.3` — needs Kolya (no auto-publish). Until then the published `0.0.2` tarball is v1-only and unusable under v2.
+- `npm deprecate @grudanov-nikolay/opencode-workshop-plugin@0.1.0-kolya.15` (does not exist on npm — no action possible).
+- The npm entry can be restored in `opencode.jsonc` as `@grudanov-nikolay/agenttrace-opencode-plugin@0.0.3` right after publishing.
+- `/home/gna/workspase/projects/agenttrace/.opencode/plugins/graphify.js` — a **separate** v1-only plugin inside the daemon repo, also failing under v2 (`PluginModule.LoadError`). Not touched by F-040; needs its own migration.
+- `~/.config/opencode/package.json` still pins `@opencode-ai/plugin@1.17.20` (v1 types). The v2 type package is `@opencode/plugin@2.0.32`.
+
+**Todos:**
+- [x] Dump the v2 loader contract from the binary; locate v2 types (`@opencode/plugin@2.0.32`, `@opencode/schema@2.0.32`, `@opencode/ai@2.0.32`) in `/tmp/opencode/ocplugin/`
+- [x] Build the full v2 event inventory + payload shapes (`session.*`)
+- [x] `dist/index.js`: dual-version export `{ id: PLUGIN_NAME, setup: v2Setup, server: plugin }`
+- [x] `dist/index.js`: `v2Setup(ctx)` — event pump (`subscribe` → legacy `{type, properties}` envelope), tool hooks, session hooks, cleanup returning `Registration.dispose()`
+- [x] `dist/index.js`: sidepanel system-prompt suppression flag + F-006 daemon-src path probe
+- [x] `dist/index.js`: Node-ESM `require` shim + `getHostname()` fix
+- [x] `scripts/gen-cjs.mjs` — new ESM→CJS rewriter; `dist/index.cjs` regenerated from the ESM source of truth
+- [x] `node --check` on `dist/index.js`, `dist/index.cjs`, static copy
+- [x] 3-site lockstep (`dist/index.js` == `dist/index.cjs` == `~/.config/opencode/plugins/opencode-workshop-plugin.js`, md5-verified)
+- [x] `~/.config/opencode/opencode.jsonc`: `plugin` → `plugins`, drop the non-existent `-kolya.15` entry (backup taken)
+- [x] `opencode plugin list` — `@grudanov-nikolay/agenttrace-opencode-plugin  local  …/opencode-workshop-plugin.js`
+- [x] Functional smoke test (mock `ctx` + local HTTP sink, `/tmp/opencode/v2-smoke/smoke.mjs`): 5 POSTs, spans `ai.event`, `ai.toolCall` ×2 (completed + error), LLM span `openai/gpt-5` with usage tokens, `POST /v1/events/track_partial`; cleanup disposes all registrations
+- [x] Renumber F-038 → F-040 (F-038/F-039 already taken by the daemon-side feedback-loop Feature)
+- [ ] **Commit** (blocked on Kolya's explicit command — no auto-commit)
+- [ ] Version bump `0.0.2 → 0.0.3` + `npm publish` (Kolya)
+- [ ] Re-add the npm plugin entry to `opencode.jsonc` after publish (Kolya)
 
 ### F-024 — Rename stack: `opencode-workshop-plugin` → `agenttrace-opencode-plugin` — Closed 2026-10-08 (audit)
 
