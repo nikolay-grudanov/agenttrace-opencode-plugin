@@ -89,7 +89,7 @@ function generateId() {
   return base64Encode(randomBytes(12)).replace(/[+/=]/g, "").slice(0, 16);
 }
 function runWithTracingSuppressed(fn) {
-  const hook = globalThis.RAINDROP_SUPPRESS_TRACING;
+  const hook = globalThis.AGENTTRACE_SUPPRESS_TRACING;
   if (typeof hook !== "function") return fn();
   let started = false;
   try {
@@ -175,7 +175,7 @@ function getRetryDelayMs(attemptNumber, previousError) {
   return Math.min(base * factor, MAX_RETRY_DELAY_MS);
 }
 async function withRetry(operation, opName, opts) {
-  const prefix = opts.sdkName ? `[raindrop-ai/${opts.sdkName}]` : "[raindrop-ai/core]";
+  const prefix = opts.sdkName ? `[agenttrace/${opts.sdkName}]` : "[agenttrace/core]";
   let lastError = void 0;
   for (let attemptNumber = 1; attemptNumber <= opts.maxAttempts; attemptNumber++) {
     if (attemptNumber > 1) {
@@ -232,7 +232,7 @@ async function postJson(url, body, headers, opts) {
   );
 }
 var DEFAULT_MAX_TEXT_FIELD_CHARS = 1e6;
-var TRUNCATION_MARKER = "...[truncated by raindrop]";
+var TRUNCATION_MARKER = "...[truncated by agenttrace]";
 var currentDefaultMaxTextFieldChars = DEFAULT_MAX_TEXT_FIELD_CHARS;
 function resolveMaxTextFieldChars(value) {
   if (typeof value === "number" && Number.isFinite(value) && value > 0) {
@@ -358,7 +358,7 @@ function buildOtlpSpan(args) {
   if (args.status) span.status = args.status;
   return span;
 }
-function buildExportTraceServiceRequest(spans, serviceName = "raindrop.core", serviceVersion = "0.0.0") {
+function buildExportTraceServiceRequest(spans, serviceName = "agenttrace.core", serviceVersion = "0.0.0") {
   return {
     resourceSpans: [
       {
@@ -375,8 +375,8 @@ function buildExportTraceServiceRequest(spans, serviceName = "raindrop.core", se
     ],
   };
 }
-var LOCAL_DEBUGGER_ENV_VAR = "RAINDROP_LOCAL_DEBUGGER";
-var WORKSHOP_ENV_VAR = "RAINDROP_WORKSHOP";
+var LOCAL_DEBUGGER_ENV_VAR = "AGENTTRACE_LOCAL_DEBUGGER";
+var WORKSHOP_ENV_VAR = "AGENTTRACE_WORKSHOP";
 var DEFAULT_LOCAL_WORKSHOP_URL = "http://localhost:5899/v1/";
 function readEnvVar(name) {
   var _a;
@@ -395,11 +395,11 @@ function readWorkshopEnv() {
   if (trimmed.length === 0) return void 0;
   if (/^https?:\/\//i.test(trimmed)) {
     // KOLYA PATCH (F-005): same precedence guard as resolveLocalWorkshopUrl.
-    // If user sets RAINDROP_WORKSHOP=https://stale.example.com/v1/, fall
+    // If user sets AGENTTRACE_WORKSHOP=https://stale.example.com/v1/, fall
     // back to auto-detection rather than silently mirroring to a non-local
     // host.
     if (!isLocalUrl(trimmed)) {
-      rateLimitedLog("workshop_env_non_local", () => console.warn(`[oc-wsp] [warn] RAINDROP_WORKSHOP=${trimmed} is not a local URL; ignoring. Set local_workshop_url in raindrop.json if you really want a custom URL.`));
+      rateLimitedLog("workshop_env_non_local", () => console.warn(`[oc-wsp] [warn] AGENTTRACE_WORKSHOP=${trimmed} is not a local URL; ignoring. Set local_workshop_url in agenttrace.json if you really want a custom URL.`));
       return void 0;
     }
     return { url: trimmed };
@@ -419,7 +419,7 @@ function isLocalDevHost(hostname) {
 // KOLYA PATCH (F-005): URL-level local-host check used by env-var precedence.
 // Accepts the same loopback forms as isLocalDevHost plus the IPv4-mapped IPv6
 // loopback (::ffff:127.0.0.1) some Node versions report when binding 127.0.0.1.
-// Used to drop stale or misconfigured RAINDROP_LOCAL_WORKSHOP_URL env vars.
+// Used to drop stale or misconfigured AGENTTRACE_LOCAL_WORKSHOP_URL env vars.
 function isLocalUrl(value) {
   if (typeof value !== "string" || value.length === 0) return false;
   let hostname;
@@ -484,7 +484,7 @@ function mirrorPartialEventToLocalDebugger(event, options = {}) {
     sdkName: options.sdkName,
   }).catch(() => {});
 }
-var PROJECT_ID_HEADER = "X-Raindrop-Project-Id";
+var PROJECT_ID_HEADER = "X-AgentTrace-Project-Id";
 var PROJECT_ID_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 function isValidProjectIdSlug(value) {
   return PROJECT_ID_SLUG_PATTERN.test(value);
@@ -523,12 +523,18 @@ var EventShipper = class {
     this.hasShutdown = false;
     var _a, _b, _c, _d, _e, _f, _g, _h;
     this.writeKey = (_a = opts.writeKey) == null ? void 0 : _a.trim();
-    this.baseUrl = (_b = formatEndpoint(opts.endpoint)) != null ? _b : "https://api.raindrop.ai/v1/";
+    this.baseUrl = formatEndpoint(opts.endpoint);
+    // KOLYA PATCH (F-042): the upstream cloud endpoint (https://api.raindrop.ai/v1)
+    // was the hardcoded default. Kolya removed the cloud integration entirely, so
+    // there is no fallback host anymore: without an explicit AGENTTRACE_API_URL /
+    // agenttrace.json api_url the cloud shipper stays disabled and every span goes
+    // to the local Workshop daemon only.
+    if (!this.baseUrl) this.enabled = false;
     this.enabled = opts.enabled !== false;
     this.debug = opts.debug;
     this.partialFlushMs = (_c = opts.partialFlushMs) != null ? _c : 1e3;
     this.sdkName = (_d = opts.sdkName) != null ? _d : "core";
-    this.prefix = `[raindrop-ai/${this.sdkName}]`;
+    this.prefix = `[agenttrace/${this.sdkName}]`;
     this.defaultEventName = (_e = opts.defaultEventName) != null ? _e : "ai_generation";
     this.maxTextFieldCharsOpt = opts.maxTextFieldChars;
     this.localDebuggerUrl = (_f = resolveLocalDebuggerBaseUrl(opts.localDebuggerUrl)) != null ? _f : void 0;
@@ -542,7 +548,7 @@ var EventShipper = class {
     const isNode = typeof process !== "undefined" && typeof process.version === "string";
     this.context = {
       library: {
-        name: (_g = opts.libraryName) != null ? _g : "@raindrop-ai/core",
+        name: (_g = opts.libraryName) != null ? _g : "@grudanov-nikolay/agenttrace-opencode-plugin",
         version: (_h = opts.libraryVersion) != null ? _h : "0.0.0",
       },
       metadata: {
@@ -768,7 +774,7 @@ var EventShipper = class {
       },
       properties: {
         ...restProperties,
-        ...(wizardSession ? { "raindrop.wizardSession": wizardSession } : {}),
+        ...(wizardSession ? { "agenttrace.wizardSession": wizardSession } : {}),
         ...(this.gitContext && (this.gitContext.project || this.gitContext.branch || this.gitContext.commit) ? { git: this.gitContext } : {}),
         $context: this.context,
       },
@@ -944,7 +950,13 @@ var TraceShipper = class {
     this.hasShutdown = false;
     var _a, _b, _c, _d, _e, _f, _g, _h, _i;
     this.writeKey = (_a = opts.writeKey) == null ? void 0 : _a.trim();
-    this.baseUrl = (_b = formatEndpoint(opts.endpoint)) != null ? _b : "https://api.raindrop.ai/v1/";
+    this.baseUrl = formatEndpoint(opts.endpoint);
+    // KOLYA PATCH (F-042): the upstream cloud endpoint (https://api.raindrop.ai/v1)
+    // was the hardcoded default. Kolya removed the cloud integration entirely, so
+    // there is no fallback host anymore: without an explicit AGENTTRACE_API_URL /
+    // agenttrace.json api_url the cloud shipper stays disabled and every span goes
+    // to the local Workshop daemon only.
+    if (!this.baseUrl) this.enabled = false;
     this.enabled = opts.enabled !== false;
     this.debug = opts.debug;
     this.debugSpans = opts.debugSpans === true;
@@ -952,8 +964,8 @@ var TraceShipper = class {
     this.maxBatchSize = (_d = opts.maxBatchSize) != null ? _d : 50;
     this.maxQueueSize = (_e = opts.maxQueueSize) != null ? _e : 5e3;
     this.sdkName = (_f = opts.sdkName) != null ? _f : "core";
-    this.prefix = `[raindrop-ai/${this.sdkName}]`;
-    this.serviceName = (_g = opts.serviceName) != null ? _g : "raindrop.core";
+    this.prefix = `[agenttrace/${this.sdkName}]`;
+    this.serviceName = (_g = opts.serviceName) != null ? _g : "agenttrace.core";
     this.serviceVersion = (_h = opts.serviceVersion) != null ? _h : "0.0.0";
     this.localDebuggerUrl = (_i = resolveLocalDebuggerBaseUrl(opts.localDebuggerUrl)) != null ? _i : void 0;
     if (this.debug && this.localDebuggerUrl) {
@@ -1044,7 +1056,7 @@ var TraceShipper = class {
     var _a, _b;
     const ids = createSpanIds(args.parent);
     const started = (_a = args.startTimeUnixNano) != null ? _a : nowUnixNanoString();
-    const attrs = [attrString("ai.telemetry.metadata.raindrop.eventId", args.eventId), attrString("ai.operationId", args.operationId)];
+    const attrs = [attrString("ai.telemetry.metadata.agenttrace.eventId", args.eventId), attrString("ai.operationId", args.operationId)];
     if ((_b = args.attributes) == null ? void 0 : _b.length) attrs.push(...args.attributes);
     const span = { ids, name: args.name, startTimeUnixNano: started, attributes: attrs };
     this.mirrorToLocalDebugger(
@@ -1097,7 +1109,7 @@ var TraceShipper = class {
   createSpan(args) {
     var _a;
     const ids = createSpanIds(args.parent);
-    const attrs = [attrString("ai.telemetry.metadata.raindrop.eventId", args.eventId)];
+    const attrs = [attrString("ai.telemetry.metadata.agenttrace.eventId", args.eventId)];
     if ((_a = args.attributes) == null ? void 0 : _a.length) attrs.push(...args.attributes);
     const otlp = buildOtlpSpan({
       ids,
@@ -1215,7 +1227,7 @@ var TraceShipper = class {
 };
 
 // ../core/dist/index.node.js
-globalThis.RAINDROP_ASYNC_LOCAL_STORAGE = AsyncLocalStorage;
+globalThis.AGENTTRACE_ASYNC_LOCAL_STORAGE = AsyncLocalStorage;
 // KOLYA PATCH (F-040): Node-ESM compatible `require` shim.
 // OpenCode v2 loads this bundle with Bun (where `require` exists in ESM), but the
 // same file is also imported by plain `node` (smoke tests, npm consumers, and the
@@ -1238,13 +1250,13 @@ function findOtelContextManager() {
   return void 0;
 }
 function installTracingSuppressionHook() {
-  if (typeof globalThis.RAINDROP_SUPPRESS_TRACING === "function") return;
+  if (typeof globalThis.AGENTTRACE_SUPPRESS_TRACING === "function") return;
   const hook = (fn) => {
     const cm = findOtelContextManager();
     if (!cm) return fn();
     return cm.with(cm.active().setValue(SUPPRESS_TRACING_KEY, true), fn);
   };
-  globalThis.RAINDROP_SUPPRESS_TRACING = hook;
+  globalThis.AGENTTRACE_SUPPRESS_TRACING = hook;
 }
 installTracingSuppressionHook();
 
@@ -1253,11 +1265,11 @@ function loadConfig(projectDirectory) {
   var _a, _b, _c, _d, _e, _f, _g, _h;
   let merged = {};
   const configPaths = [
-    join(homedir(), ".config", "opencode", "raindrop.json"),
-    join(projectDirectory, ".opencode", "raindrop.json"),
-    join(projectDirectory, "raindrop.json"),
-    join(process.cwd(), ".opencode", "raindrop.json"),
-    join(process.cwd(), "raindrop.json")
+    join(homedir(), ".config", "opencode", "agenttrace.json"),
+    join(projectDirectory, ".opencode", "agenttrace.json"),
+    join(projectDirectory, "agenttrace.json"),
+    join(process.cwd(), ".opencode", "agenttrace.json"),
+    join(process.cwd(), "agenttrace.json")
   ];
   for (const configPath of configPaths) {
     try {
@@ -1269,41 +1281,49 @@ function loadConfig(projectDirectory) {
     } catch (e) {}
   }
   let eventMetadata;
-  const envMeta = process.env["RAINDROP_EVENT_METADATA"];
+  const envMeta = process.env["AGENTTRACE_EVENT_METADATA"];
   if (envMeta) {
     try {
       eventMetadata = JSON.parse(envMeta);
     } catch (e) {}
   }
   return {
-    writeKey: (_b = (_a = process.env["RAINDROP_WRITE_KEY"]) != null ? _a : merged.write_key) != null ? _b : "",
-    endpoint: (_d = (_c = process.env["RAINDROP_API_URL"]) != null ? _c : merged.api_url) != null ? _d : "https://api.raindrop.ai/v1",
-    projectId: (_e = process.env["RAINDROP_PROJECT_ID"]) != null ? _e : merged.project_id,
-    eventName: (_f = merged.event_name ?? merged.eventName) != null ? _f : "opencode_session",
-    debug: process.env["RAINDROP_DEBUG"] === "true" ? true : (_g = merged.debug) != null ? _g : false,
-    captureSystemPrompt: process.env["RAINDROP_CAPTURE_SYSTEM_PROMPT"] !== void 0 ? process.env["RAINDROP_CAPTURE_SYSTEM_PROMPT"] === "true" : (_h = merged.capture_system_prompt) != null ? _h : false,
+    writeKey: (_b = (_a = process.env["AGENTTRACE_WRITE_KEY"]) != null ? _a : merged.write_key) != null ? _b : "",
+    endpoint: (_d = (_c = process.env["AGENTTRACE_API_URL"]) != null ? _c : merged.api_url) != null ? _d : void 0,
+    projectId: (_e = process.env["AGENTTRACE_PROJECT_ID"]) != null ? _e : merged.project_id,
+    // KOLYA PATCH (F-042): AGENTTRACE_EVENT_NAME — single-value override that
+    // sits above the config file but below per-message metadata.eventName and
+    // AGENTTRACE_EVENT_METADATA. Resolution chain:
+    //   1) part.metadata.eventName  (per message)
+    //   2) AGENTTRACE_EVENT_METADATA .eventName
+    //   3) AGENTTRACE_EVENT_NAME   <-- new
+    //   4) agenttrace.json:eventName / :event_name
+    //   5) default "opencode_session"  (F-036 moves the default to "agent_session")
+    eventName: (_f = process.env["AGENTTRACE_EVENT_NAME"] ?? merged.event_name ?? merged.eventName) != null ? _f : "opencode_session",
+    debug: process.env["AGENTTRACE_DEBUG"] === "true" ? true : (_g = merged.debug) != null ? _g : false,
+    captureSystemPrompt: process.env["AGENTTRACE_CAPTURE_SYSTEM_PROMPT"] !== void 0 ? process.env["AGENTTRACE_CAPTURE_SYSTEM_PROMPT"] === "true" : (_h = merged.capture_system_prompt) != null ? _h : false,
     eventMetadata,
     // KOLYA PATCH (F-002.6): trace_only flag — when true, plugin logs go to
-    // ~/.raindrop/trace.log (append) instead of stdout/TUI. Set in raindrop.json
-    // as "trace_only": true, or via env RAINDROP_TRACE_ONLY=true. Default: false
+    // ~/.raindrop/trace.log (append) instead of stdout/TUI. Set in agenttrace.json
+    // as "trace_only": true, or via env AGENTTRACE_TRACE_ONLY=true. Default: false
     // (existing behaviour, writes to stdout).
-    traceOnly: process.env["RAINDROP_TRACE_ONLY"] === "true" ? true : (merged.trace_only === true),
+    traceOnly: process.env["AGENTTRACE_TRACE_ONLY"] === "true" ? true : (merged.trace_only === true),
     localWorkshopUrl: resolveLocalWorkshopUrl(merged.local_workshop_url),
   };
 }
 function resolveLocalWorkshopUrl(fileValue) {
-  const envValue = process.env["RAINDROP_LOCAL_WORKSHOP_URL"];
+  const envValue = process.env["AGENTTRACE_LOCAL_WORKSHOP_URL"];
   if (envValue !== void 0) {
     if (envValue === "" || envValue.toLowerCase() === "null" || envValue.toLowerCase() === "false") {
       return null;
     }
     // KOLYA PATCH (F-005): guard against stale/non-local env values that
-    // would otherwise silently override a correct raindrop.json. Falls back
+    // would otherwise silently override a correct agenttrace.json. Falls back
     // to fileValue (or auto-detect default if fileValue is empty) with a
     // rate-limited warning so the user notices the misconfiguration in
     // trace.log without log spam.
     if (!isLocalUrl(envValue)) {
-      rateLimitedLog("local_workshop_url_non_local", () => console.warn(`[oc-wsp] [warn] RAINDROP_LOCAL_WORKSHOP_URL=${envValue} is not a local URL; falling back to raindrop.json (or auto-detect). If this is intentional, set local_workshop_url in raindrop.json too.`));
+      rateLimitedLog("local_workshop_url_non_local", () => console.warn(`[oc-wsp] [warn] AGENTTRACE_LOCAL_WORKSHOP_URL=${envValue} is not a local URL; falling back to agenttrace.json (or auto-detect). If this is intentional, set local_workshop_url in agenttrace.json too.`));
       return fileValue || DEFAULT_LOCAL_WORKSHOP_URL;
     }
     return envValue;
@@ -1315,7 +1335,7 @@ function resolveLocalWorkshopUrl(fileValue) {
 var package_default = {
   name: "@grudanov-nikolay/agenttrace-opencode-plugin",
   version: "0.0.2",
-  description: "agenttrace observability plugin for OpenCode. Drop-in replacement for @raindrop-ai/opencode-plugin. Renamed from @grudanov-nikolay/opencode-workshop-plugin@0.0.1 \u2192 @grudanov-nikolay/agenttrace-opencode-plugin@0.1.0 on 2026-09-17 (F-024). Carries the same 5 fixes: MCP tool.execute.after crash workaround (upstream issue anomalyco/opencode#21149), RAINDROP_LOCAL_WORKSHOP_URL non-local fallback, subagent_name recovery on 1.18 nested sub-agents (task span + child LLM span + Subagent root), result.error propagation into span status=ERROR, and Workshop sidepanel bootstrap (registers `workshop` MCP server and prepends sidepanel system prompt when RAINDROP_SIDEPANEL_ACTIVE=1).",
+  description: "agenttrace observability plugin for OpenCode. Fork of @raindrop-ai/opencode-plugin (https://github.com/raindrop-ai/opencode-plugin) — full upstream credits and the list of carried fixes live in README.md. Renamed from @grudanov-nikolay/opencode-workshop-plugin@0.0.1 \u2192 @grudanov-nikolay/agenttrace-opencode-plugin@0.1.0 on 2026-09-17 (F-024). Carries: MCP tool.execute.after crash workaround (upstream issue anomalyco/opencode#21149), AGENTTRACE_LOCAL_WORKSHOP_URL non-local fallback, subagent_name recovery on nested sub-agents (task span + child LLM span + Subagent root), result.error propagation into span status=ERROR, and Workshop sidepanel bootstrap when AGENTTRACE_SIDEPANEL_ACTIVE=1.",
   type: "module",
   main: "dist/index.js",
   module: "dist/index.js",
@@ -1377,7 +1397,7 @@ var TraceShipper2 = class extends TraceShipper {
     super({
       ...opts,
       sdkName: (_a = opts.sdkName) != null ? _a : "opencode-plugin",
-      serviceName: (_b = opts.serviceName) != null ? _b : "raindrop.opencode-plugin",
+      serviceName: (_b = opts.serviceName) != null ? _b : "agenttrace.opencode-plugin",
       serviceVersion: (_c = opts.serviceVersion) != null ? _c : PLUGIN_VERSION,
     });
   }
@@ -1391,7 +1411,7 @@ var TraceShipper2 = class extends TraceShipper {
 };
 
 // src/bounded.ts
-var TRUNCATION_MARKER2 = "...[truncated by raindrop]";
+var TRUNCATION_MARKER2 = "...[truncated by agenttrace]";
 var MAX_TEXT_FIELD_CHARS = 1e6;
 var MAX_BOUNDED_DEPTH = 12;
 function truncateToLimit2(text, limit) {
@@ -2397,9 +2417,9 @@ var ACTIVE_SIDEPANEL_MODE = false;
 var SIDEPANEL_SYSTEM_SUPPRESS = 0;
 
 function sidepanelSystemBlock() {
-  const runId = process.env.RAINDROP_SIDEPANEL_RUN_ID || "<none>";
+  const runId = process.env.AGENTTRACE_SIDEPANEL_RUN_ID || "<none>";
   return [
-    "You are the assistant in the Raindrop Workshop sidepanel — the local trace debugger for AI agents.",
+    "You are the assistant in the AgentTrace Workshop sidepanel — the local trace debugger for AI agents.",
     `Local Workshop MCP server is configured as 'workshop'. Use its tools (workshop__get_current_run, workshop__get_run_outline, workshop__query_traces, workshop__search_run, workshop__get_span_payload, workshop__get_span_context, workshop__annotate, workshop__replay_run, workshop__show_in_ui, workshop__ask_agent) when the user references the focused run, this trace, the current screen, or a captured span.`,
     `Currently focused Workshop run: ${runId}. Treat the user's first message as the in-flight request, not as a context reset.`,
     `Reply in the user's language.`,
@@ -2762,13 +2782,13 @@ async function plugin(input) {
   if (!config.writeKey && !hasLocalDestination) {
     appLog(
       "warn",
-      "RAINDROP_WRITE_KEY not set and no local Workshop daemon detected \u2014 Raindrop tracing disabled. Set RAINDROP_WRITE_KEY for cloud, or RAINDROP_LOCAL_WORKSHOP_URL / RAINDROP_LOCAL_DEBUGGER for local-only mode.",
+      "AGENTTRACE_WRITE_KEY not set and no local Workshop daemon detected \u2014 Agenttrace tracing disabled. Set AGENTTRACE_WRITE_KEY for cloud, or AGENTTRACE_LOCAL_WORKSHOP_URL / AGENTTRACE_LOCAL_DEBUGGER for local-only mode.",
     );
     return {};
   }
   if (config.debug) {
     const destinations = [config.writeKey ? `cloud (${config.endpoint})` : null, resolvedLocalUrl ? `local Workshop (${resolvedLocalUrl})` : null].filter(Boolean);
-    appLog("info", `Raindrop tracing enabled \u2014 destinations: ${destinations.join(", ")}`);
+    appLog("info", `AgentTrace tracing enabled \u2014 destinations: ${destinations.join(", ")}`);
   }
   const worktree = (_a = input.worktree) != null ? _a : input.directory;
   const gitContext = collectGitContext(worktree);
@@ -2779,6 +2799,11 @@ async function plugin(input) {
     projectId: config.projectId,
     localDebuggerUrl: config.localWorkshopUrl,
     gitContext,
+    // KOLYA PATCH (F-042): without this the EventShipper2 fallback stays
+    // hardcoded to "opencode_session" and silently ignores
+    // AGENTTRACE_EVENT_NAME / agenttrace.json:eventName for events that are
+    // flushed before any per-message metadata is accumulated.
+    defaultEventName: config.eventName,
   });
   const traceShipper = new TraceShipper2({
     writeKey: config.writeKey,
@@ -2789,14 +2814,14 @@ async function plugin(input) {
   });
   // === KOLYA PATCH (F-006): sidepanel bootstrap =============================
   // When the local Workshop daemon is the destination and the Workshop chat
-  // bridge signals a sidepanel session in flight (RAINDROP_SIDEPANEL_ACTIVE=1,
-  // RAINDROP_SIDEPANEL_RUN_ID=<id>), write a small config dir to
+  // bridge signals a sidepanel session in flight (AGENTTRACE_SIDEPANEL_ACTIVE=1,
+  // AGENTTRACE_SIDEPANEL_RUN_ID=<id>), write a small config dir to
   // ~/.cache/workshop-sidepanel/<pid>-<ts> containing opencode.json (which
   // registers the `workshop` stdio MCP server) and export it as
   // OPENCODE_CONFIG_DIR so the spawning opencode process picks it up.
   // Sidepanel system prompt is injected via experimental.chat.system.transform
   // (see above). All errors are silent — bootstrap is best-effort.
-  const sidepanelMode = hasLocalDestination && process.env.RAINDROP_SIDEPANEL_ACTIVE === "1";
+  const sidepanelMode = hasLocalDestination && process.env.AGENTTRACE_SIDEPANEL_ACTIVE === "1";
   // KOLYA PATCH (F-040): expose the resolved sidepanel flag at module scope so the
   // OpenCode v2 adapter can inject the sidepanel system block without duplicating
   // the (config-internal) hasLocalDestination logic.
@@ -2821,7 +2846,19 @@ async function plugin(input) {
       } catch {}
       const dir = path.join(cacheRoot, `${process.pid}-${Date.now()}`);
       fs.mkdirSync(dir, { recursive: true });
-      const isCompiled = (process.execPath || "").toLowerCase().endsWith("raindrop");
+      // KOLYA PATCH (F-042): Kolya 2026-10-19 — «выкинь проверку».
+      // The old test was `process.execPath.endsWith("raindrop")`, i.e. "am I
+      // running inside a bundled binary?". It named the product, so it could
+      // never survive the rename, and F-025 keeps `PLATFORM_MAP` as-is, which
+      // means the shipped binary is still `raindrop-linux-x64` — an
+      // `endsWith("agenttrace")` test would not have matched it either. The
+      // check is dead weight that drags the old name into every grep.
+      // Ask the shape of the interpreter instead: node/bun/deno means we are
+      // in source mode and must invoke the daemon through `bun <daemonSrc>`;
+      // anything else is a self-contained bundle that can serve `workshop mcp`
+      // from its own executable path.
+      const execBase = (process.execPath || "").toLowerCase().split(/[\\/]/).pop() || "";
+      const isCompiled = !/^(node|bun|deno)(\.exe)?$/.test(execBase);
       // opencode's McpLocalConfig.command is `[exe, ...args]` (single array).
       // `args` is not a separate field — anything beyond `command` is ignored.
       // Run via `bun src/index.ts workshop mcp` so the MCP server uses the
@@ -2848,9 +2885,9 @@ async function plugin(input) {
             enabled: true,
             environment: {
               // Workshop mcp server expects the bare daemon URL (no /v1/).
-              RAINDROP_WORKSHOP_URL: (resolvedLocalUrl ?? "http://localhost:5899").replace(/\/v1\/?$/, ""),
-              RAINDROP_WORKSHOP_AGENT_PROVIDER: "opencode",
-              RAINDROP_WORKSHOP_ANNOTATION_SOURCE: "opencode",
+              AGENTTRACE_WORKSHOP_URL: (resolvedLocalUrl ?? "http://localhost:5899").replace(/\/v1\/?$/, ""),
+              AGENTTRACE_WORKSHOP_AGENT_PROVIDER: "opencode",
+              AGENTTRACE_WORKSHOP_ANNOTATION_SOURCE: "opencode",
             },
           },
         },
@@ -2871,7 +2908,7 @@ async function plugin(input) {
     try { process.env.OPENCODE_CONFIG_DIR = workshopConfigDir; } catch {}
   }
   if (sidepanelMode) {
-    appLog("info", `sidepanel bootstrap: run_id=${process.env.RAINDROP_SIDEPANEL_RUN_ID || ""}`);
+    appLog("info", `sidepanel bootstrap: run_id=${process.env.AGENTTRACE_SIDEPANEL_RUN_ID || ""}`);
   }
   const hooks = createHooks(config, worktree, input.directory, eventShipper, traceShipper, gitContext, resolvedLocalUrl, sidepanelMode);
   return hooks;

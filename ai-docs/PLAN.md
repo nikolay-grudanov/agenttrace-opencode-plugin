@@ -34,7 +34,7 @@ For detailed breakdown of every closed feature see `## Closed Features` below.
 
 ## Active Features
 
-### F-042 — Rename `RAINDROP_*` env vars and `raindrop.json` → `AGENTTRACE_*` / `agenttrace.json` — OPEN (not started)
+### F-042 — Rename `RAINDROP_*` env vars and `raindrop.json` → `AGENTTRACE_*` / `agenttrace.json` — implemented 2026-10-20 (uncommitted)
 
 **Context:** This is the plugin-repo mirror of **F-037** in `agenttrace/ai-docs/PLAN.md` (project convention: every feature gets an entry in its own repo). Kolya 2026-10-19, verbatim:
 
@@ -145,25 +145,76 @@ Rationale: F-025 keeps `PLATFORM_MAP` unchanged, so the bundled binary is still 
 
 **Reference:** F-037 in `agenttrace/ai-docs/PLAN.md` (the daemon-repo copy of this spec), F-043 (daemon env vars).
 
+**Implementation notes (2026-10-20) — deviations from the plan above:**
+
+1. **17 names renamed, not 12.** Grep over the bundle found five more than the spec listed. Two are **not env vars** but `globalThis` hooks written by this plugin and read by nobody (verified by grepping all three repos):
+   - `RAINDROP_SUPPRESS_TRACING` → `AGENTTRACE_SUPPRESS_TRACING` (write-only latch installed at bundle load)
+   - `RAINDROP_ASYNC_LOCAL_STORAGE` → `AGENTTRACE_ASYNC_LOCAL_STORAGE` (write-only `globalThis` assignment of the `AsyncLocalStorage` class)
+   Three more are the F-006 sidepanel's **outgoing** `RAINDROP_WORKSHOP_URL` / `_AGENT_PROVIDER` / `_ANNOTATION_SOURCE` written into the generated `opencode.json`. Those are wire contract with the daemon — **F-043 must rename them in the same release** or the sidepanel breaks.
+
+2. **OTLP attribute prefixes also renamed — this is a wire contract.** `ai.telemetry.metadata.raindrop.eventId` → `ai.telemetry.metadata.agenttrace.eventId`, and `raindrop.wizardSession` → `agenttrace.wizardSession`. The daemon hardcodes the `raindrop.*` prefix in `src/parse.ts:213-237` and `src/agents-config.ts:586,605,613`. **The daemon MUST be updated to read `agenttrace.*` first with a `raindrop.*` fallback in the same release**, otherwise every trace silently loses its `event_id` / `user_id` / `convo_id` / `properties` / `replay_run_id`. The fallback is required because historical runs already in SQLite carry the old prefix — this is telemetry-in-storage back-compat, not config/env back-compat, and therefore does not contradict Kolya's hard-cut decision. Same reasoning as the dual `mcp__raindrop__` detection in F-043's `MessagePane.tsx`.
+
+3. **Bug found and fixed while implementing `AGENTTRACE_EVENT_NAME`.** The first version parsed as
+   `process.env["AGENTTRACE_EVENT_NAME"] ?? (_f = merged.event_name ?? merged.eventName) != null ? _f : "opencode_session"`
+   — but `??` binds tighter than `?:`, so the expression is `(env ?? (_f = …)) != null ? _f : …`. When the env var **was** set, `??` short-circuited, `_f` was never assigned, and the whole expression returned `undefined`. Fixed to
+   `(_f = process.env["AGENTTRACE_EVENT_NAME"] ?? merged.event_name ?? merged.eventName) != null ? _f : "opencode_session"`.
+   Lesson: in this bundled codebase the esbuild `??`-into-temp idiom must put the **entire** fallback chain inside the assignment.
+
+4. **`EventShipper2` never received the configured event name.** The constructor hardcoded `defaultEventName: opts.defaultEventName ?? "opencode_session"` and `plugin()` passed only `writeKey`/`endpoint`/`debug`/`projectId`/`localDebuggerUrl`/`gitContext`. Now passes `defaultEventName: config.eventName`, so the flush fallback honours env and config too.
+
+5. **Precedence chain verified end-to-end** against a local HTTP sink (`/tmp/opencode/v2-smoke/smoke.mjs`, mock ctx): env > `agenttrace.json:event_name` > `agenttrace.json:eventName` > `"opencode_session"`. All four cases confirmed. ⚠️ Quirk discovered: the config merge is a shallow `{...merged, ...parsed}` across the five paths, so a **global** `~/.config/opencode/agenttrace.json` with `event_name` **shadows a project-level `eventName`** — snake_case from a higher-priority-config-level beats camelCase from a lower one. Not fixed (pre-existing shape); documented so nobody burns time on it.
+
+6. **`process.execPath.endsWith("raindrop")` replaced with an interpreter-shape test**, per Kolya:
+   ```js
+   const execBase = (process.execPath || "").toLowerCase().split(/[\\/]/).pop() || "";
+   const isCompiled = !/^(node|bun|deno)(\.exe)?$/.test(execBase);
+   ```
+   Verified: `/usr/bin/node`→false, `~/.bun/bin/bun`→false, `C:\…\node.exe`→false, `/opt/x/deno`→false, `/opt/x/agenttrace`→true, `/opt/x/raindrop-linux-x64`→**true** (correct — F-025 keeps `PLATFORM_MAP` keys).
+
+7. **Cosmetic `raindrop` strings also renamed** (all confirmed unread by the daemon): OTLP `serviceName` defaults `raindrop.core` → `agenttrace.core` and `raindrop.opencode-plugin` → `agenttrace.opencode-plugin`; truncation marker `...[truncated by raindrop]` → `...[truncated by agenttrace]`; sidepanel prompt "Raindrop Workshop" → "AgentTrace Workshop"; log line "Raindrop tracing enabled" → "AgentTrace tracing enabled".
+
+8. **Deliberately NOT renamed — awaiting Kolya's call.** These are upstream-protocol identifiers, not our naming:
+   - `https://api.raindrop.ai/v1` (default cloud endpoint, 3×) — the domain is owned by Raindrop AI; we only call it, we do not control it.
+   - `X-Raindrop-Project-Id` HTTP header — daemon does not read it; it is the upstream service's header contract.
+   - `@raindrop-ai/core` OTLP `library.name` and the `[raindrop-ai/…]` log prefixes — upstream SDK identity in telemetry.
+
+9. **`~/.raindrop/trace.log` kept** — it is one of Kolya's explicitly excluded on-disk paths.
+
+10. **Docs updated:** `package.json` description (fork wording + upstream link), `LICENSE` (dropped "Copyright (c) 2026 Raindrop AI", now © 2026 Nikolai Grudanov + fork note), `README.md` (fork notice with upstream links, all env/config names), `AGENTS.md` (stale `raindrop.json` reference on line 19 fixed, attribution wording).
+
+11. **Live config renamed:** `~/.config/opencode/raindrop.json` → `agenttrace.json` (content untouched). Backup at `~/.config/opencode/raindrop.json.bak-pre-F042`.
+
+12. **The three remaining upstream identifiers — Kolya ruled 2026-10-20.** He wrote: *«https://api.raindrop.ai/v1 удали, у нас не должно быть интеграции с облочными решениями raindrop, X-Raindrop-Project-Id надо переменовать. Про @raindrop-ai/core — library.name не знаю, если это внешняя зависимость то наверное мы не можем ее убрать или это внутреняя библиотека внутри кода и мы можем переменовать ее и логи?»*
+
+    - **`@raindrop-ai/core` is INTERNAL, not a dependency.** Verified: `package.json` declares **no** `dependencies` at all (only optional peers `@opencode-ai/plugin`, `@opencode-ai/sdk`), and the bundle contains **zero** `import`/`require` of any `@raindrop-ai/*` module. The strings were plain literals in our own code. Also worth knowing: the `"@raindrop-ai/core"` at the `libraryName` fallback is **dead code** — the plugin always passes an explicit `libraryName: PLUGIN_NAME` into both shipper constructors, as it does for `sdkName` and `serviceName`. Renamed anyway (now `@grudanov-nikolay/agenttrace-opencode-plugin`), plus the log prefixes `[raindrop-ai/…]` → `[agenttrace/…]` (7 sites).
+    - **`X-Raindrop-Project-Id` → `X-AgentTrace-Project-Id`.** The daemon never read this header (verified by grep over `src` + `app/src`), so this is safe locally.
+    - **`https://api.raindrop.ai/v1` — removed, no replacement host.** Both cloud shipper constructors lost their hardcoded default; `loadConfig` now returns `endpoint: undefined` when neither `AGENTTRACE_API_URL` nor `agenttrace.json:api_url` is set. Added `if (!this.baseUrl) this.enabled = false` to both constructors so the cloud path deactivates instead of building `undefined/signals/track`. Net effect: the plugin is local-Workshop-only unless someone explicitly configures a cloud endpoint.
+
 **Todos:**
 
 - [x] Kolya decides `endsWith(...)` handling — **ANSWERED 2026-10-19: «выкинь проверку»**
 - [x] Kolya decides "Raindrop AI" attribution — **ANSWERED 2026-10-19: remove from LICENSE + AGENTS.md, fork notice + upstream links in README**
-- [ ] Delete the `endsWith("raindrop")` check, replace with the interpreter-shape test.
-- [ ] Strip "Raindrop AI" from `LICENSE` + `AGENTS.md`; add fork notice + upstream links to `README.md`.
-- [ ] Rename 12 env vars in `dist/index.js`.
-- [ ] Rename 5 config paths in `loadConfig`.
-- [ ] Add `AGENTTRACE_EVENT_NAME` (level 3 of the chain).
-- [ ] Update the F-006 sidepanel block's generated `opencode.json` env names.
-- [ ] Regenerate `dist/index.cjs` via `node scripts/gen-cjs.mjs`.
-- [ ] Copy to `~/.config/opencode/plugins/opencode-workshop-plugin.js` (same filename) + `node --check` both.
-- [ ] Rename `~/.config/opencode/raindrop.json` → `agenttrace.json` on Kolya's machine.
-- [ ] Grep-verify zero runtime `RAINDROP_*` / `raindrop.json` reads.
+- [x] Delete the `endsWith("raindrop")` check, replaced with the interpreter-shape test.
+- [x] Strip "Raindrop AI" from `LICENSE` + `AGENTS.md`; add fork notice + upstream links to `README.md`.
+- [x] Rename all `RAINDROP_*` names in `dist/index.js` (17, incl. 2 write-only `globalThis` hooks).
+- [x] Rename 5 config paths in `loadConfig` (`raindrop.json` → `agenttrace.json`).
+- [x] Add `AGENTTRACE_EVENT_NAME` (level 3) + fix the `??`/`?:` precedence bug + pass `defaultEventName` into `EventShipper2`.
+- [x] Update the F-006 sidepanel block's generated `opencode.json` env names (must match F-043).
+- [x] Rename OTLP attribute prefix `ai.telemetry.metadata.raindrop.*` → `.agenttrace.*` (**F-043 must add the dual-read in the daemon**).
+- [x] Rename cosmetic `serviceName` / truncation marker / sidepanel + log prose.
+- [x] Regenerate `dist/index.cjs` via `node scripts/gen-cjs.mjs`.
+- [x] Copy to `~/.config/opencode/plugins/opencode-workshop-plugin.js` (same filename) + `node --check` both + md5 parity.
+- [x] Rename `~/.config/opencode/raindrop.json` → `agenttrace.json` on Kolya's machine (backup kept).
+- [x] Grep-verify zero runtime `RAINDROP_*` / `raindrop.json` reads.
+- [x] README + AGENTS.md + `LICENSE` + `package.json` description.
+- [x] Re-run the mock-ctx smoke test (4 precedence cases + full span/track flow green).
+- [x] Remove the `api.raindrop.ai` cloud endpoint default — no replacement host, cloud path self-disables.
+- [x] Rename `X-Raindrop-Project-Id` → `X-AgentTrace-Project-Id`.
+- [x] Rename `@raindrop-ai/core` + `[raindrop-ai/…]` log prefixes → agenttrace (verified internal literals, not a dependency).
+- [ ] **F-043 (daemon): read `agenttrace.*` OTLP attributes with `raindrop.*` fallback — BLOCKING for this plugin release.**
 - [ ] Bump `0.0.2 → 0.1.0`.
-- [ ] README + AGENTS.md + `package.json` description.
-- [ ] Re-run the mock-ctx smoke test.
 - [ ] Publish `0.1.0` + GitHub Release (Kolya-gated), then re-add the npm entry to `opencode.jsonc`.
-- [ ] Move to `## Closed Features`.
+- [ ] Move to `## Closed Features` (blocked on the daemon-side dual-read landing first).
 
 ---
 

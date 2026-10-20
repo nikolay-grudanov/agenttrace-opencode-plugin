@@ -5,18 +5,18 @@
 
 ## What this project is
 
-This is **Kolya's maintained fork** of the npm-only `@raindrop-ai/opencode-plugin` (the closed-source plugin used by Raindrop Workshop to stream OpenCode sessions/spans into the local Workshop daemon on `http://localhost:5899`).
+This is **Kolya's maintained fork** of the npm-only `@raindrop-ai/opencode-plugin`. Upstream credits and links live in `README.md`; this file carries no upstream attribution beyond factual package references.
 
 The upstream plugin source is **not on GitHub** — it ships only as an npm tarball (`@raindrop-ai/opencode-plugin@0.0.18`, 41 KB, MIT). We extracted the tarball, initialized a public git repo, and now maintain our own branch.
 
-**Public package name:** `@grudanov-nikolay/agenttrace-opencode-plugin` (drop-in replacement for `@raindrop-ai/opencode-plugin`, renamed from `@grudanov-nikolay/opencode-workshop-plugin@0.0.1` on 2026-09-17, F-024).
+**Public package name:** `@grudanov-nikolay/agenttrace-opencode-plugin` (fork of `@raindrop-ai/opencode-plugin`, renamed from `@grudanov-nikolay/opencode-workshop-plugin@0.0.1` on 2026-09-17, F-024).
 
 **Public repo:** https://github.com/nikolay-grudanov/agenttrace-opencode-plugin
 
 **Why the fork exists:**
 
 1. **Upstream bug [anomalyco/opencode#21149](https://github.com/anomalyco/opencode/issues/21149)** — for MCP tool calls, OpenCode passes the raw `CallToolResult` (`{content: [{type, text}]}`) to the `tool.execute.after` hook, but the plugin's contract expects `{title, output, metadata}`. The plugin's `if (!("output" in result)) throw` crashes every MCP tool call with `tool.execute.after: result.output is required`. Upstream PR #21150 was **auto-closed on 2026-05-15** (no positive reactions) — fix will never come from upstream. We patch it.
-2. **Env var precedence footgun** — `RAINDROP_LOCAL_WORKSHOP_URL` env var unconditionally overrides `raindrop.json` `local_workshop_url`, even when set to a stale or non-local value. We've been bitten by this on 2026-06-30 (lost spans for 2 hours).
+2. **Env var precedence footgun** — `AGENTTRACE_LOCAL_WORKSHOP_URL` env var unconditionally overrides `agenttrace.json` `local_workshop_url`, even when set to a stale or non-local value. We've been bitten by this on 2026-06-30 (lost spans for 2 hours).
 3. **Workshop event attribution** — Kolya needs per-project `eventName` to split traces in Workshop UI (`oc-kd`, `oc-diagram`, `oc-notraces` wrapper pattern). Upstream has this partially, but needs hardening for multi-project setups.
 
 ## What an agent must read before acting
@@ -88,7 +88,7 @@ Pre-publish checklist:
 - [ ] `node --check dist/index.js && node --check dist/index.cjs` — both pass
 - [ ] `npm pack --dry-run` shows only `dist/**` and `package.json` + `README.md` + `LICENSE`
 - [ ] Static copy `~/.config/opencode/plugins/opencode-workshop-plugin.js` is in sync with `dist/index.js` (sha256 match)
-- [ ] Live smoke test: `./scripts/install-local.sh --reinstall` + `RAINDROP_LOCAL_WORKSHOP_URL=http://localhost:5899/v1/ opencode run "echo hi"` → spans land in Workshop DB
+- [ ] Live smoke test: `./scripts/install-local.sh --reinstall` + `AGENTTRACE_LOCAL_WORKSHOP_URL=http://localhost:5899/v1/ opencode run "echo hi"` → spans land in Workshop DB
 
 ### Git workflow
 
